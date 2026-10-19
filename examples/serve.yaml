@@ -1,0 +1,29 @@
+name: qwen-7b-serve
+image: vllm/vllm-openai:latest
+args: --model Qwen/Qwen2.5-7B-Instruct --port 8000 --api-key ${VLLM_API_KEY}
+
+gpu:
+  candidates:
+    - NVIDIA GeForce RTX 4090
+    - NVIDIA RTX A6000
+    - NVIDIA A40
+  count: 1
+  max_price_per_hour: 0.8
+  cloud: SECURE
+
+storage:
+  container_disk_gb: 50
+  network_volume_id: null
+
+env:
+  HF_TOKEN: ${HF_TOKEN}
+
+port: 8000
+readiness:
+  path: /health
+  interval_sec: 10
+  timeout_sec: 900
+
+lifecycle:
+  ttl: 3h
+  idle_timeout: 30m
