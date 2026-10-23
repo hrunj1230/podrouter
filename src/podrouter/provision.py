@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import json
+import os
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 
-from gpu_up.client import RunPodClient, is_stock_or_permanent
-from gpu_up.config import Config
-from gpu_up.errors import AllocationError, BootTimeout, PodError, ReadinessTimeout
-from gpu_up.pods import (
+from podrouter.client import RunPodClient, is_stock_or_permanent
+from podrouter.config import Config
+from podrouter.errors import (
+    AllocationError,
+    BootTimeout,
+    ConfigError,
+    PodError,
+    ReadinessTimeout,
+)
+from podrouter.pods import (
     CONFIG_HASH,
     CREATED_AT,
     GPU,
@@ -24,9 +33,19 @@ from gpu_up.pods import (
     remaining_ttl_sec,
     same_identity,
 )
-from gpu_up.reaper import render_start_command
-from gpu_up.redact import Redactor
-from gpu_up.urls import proxy_url
+from podrouter.protect import ENV_NAME as PROTECTED_ENV
+from podrouter.protect import is_protected
+from podrouter.reaper import render_start_command
+from podrouter.redact import Redactor
+from podrouter.tunnel import (
+    Tunnel,
+    cloudflare_hostname,
+    find_quick_url,
+    resolve_tunnel,
+    tunnel_docker_args,
+    tunnel_env,
+)
+from podrouter.urls import proxy_url
 
 
 class _Session:
@@ -40,6 +59,14 @@ class _Session:
 
 def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) -> int:
     """Run `up`. A successful return does not terminate the pod."""
+    if is_protected(cfg.name):
+        log.stderr(f"error: {cfg.name} is protected ({PROTECTED_ENV})")
+        return 2
+    try:
+        tunnel = resolve_tunnel()
+    except ConfigError as exc:
+        log.stderr(f"error: {exc}")
+        return 2
     started = time.monotonic()
     session = _Session()
     previous = signal.getsignal(signal.SIGINT)
@@ -51,7 +78,7 @@ def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) ->
     signal.signal(signal.SIGINT, on_sigint)
     exit_code = 1
     try:
-        existing = _find_match(client, cfg)
+        existing = _find_match(client, cfg, tunnel)
         if existing is not None:
             session.pod_id = str(existing["id"])
             session.gpu = parse_env(existing.get("env")).get(GPU, "")
@@ -65,21 +92,23 @@ def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) ->
                 hourly_price=_price_text(session.price),
             )
         else:
-            pod_id, gpu, price = _allocate(cfg, client, log, started)
+            pod_id, gpu, price = _allocate(cfg, client, log, started, tunnel)
             session.pod_id = pod_id
             session.gpu = gpu
             session.price = price
 
         url = proxy_url(session.pod_id, cfg.port)
         if not wait:
-            _print_endpoint(log, session.pod_id, url)
+            _print_endpoint(log, session.pod_id, url, cfg, session.price, tunnel)
             session.success = True
             exit_code = 0
             return exit_code
 
         _wait_running(cfg, client, session, log, started)
         _wait_healthy(cfg, client, session, log, started)
-        _print_endpoint(log, session.pod_id, url)
+        _print_endpoint(
+            log, session.pod_id, url, cfg, session.price, tunnel, client=client
+        )
         session.success = True
         exit_code = 0
         return exit_code
@@ -123,6 +152,53 @@ def list_pods(client: RunPodClient, log: Redactor) -> int:
     return 0
 
 
+def list_pods_json(client: RunPodClient, log: Redactor, health_path: str = "/health") -> int:
+    """Print managed live pods as JSON, each with a quick health check.
+
+    `healthy` is true only when the health URL answers 200. The Mac app uses it to
+    tell "starting" from "ready".
+    """
+    rows: list[dict] = []
+    for pod in client.get_pods():
+        if not is_managed(pod) or not is_live(pod):
+            continue
+        env = parse_env(pod.get("env"))
+        try:
+            port = int(env.get(PORT, "") or 0)
+        except ValueError:
+            port = 0
+        pod_id = str(pod.get("id") or "")
+        rows.append(
+            {
+                "name": _name_of(pod),
+                "pod_id": pod_id,
+                "state": pod.get("desiredStatus") or "UNKNOWN",
+                "hourly_price": hourly_price(pod),
+                "port": port,
+                "url": proxy_url(pod_id, port) if pod_id and port else "",
+                "healthy": False,
+                "tunnel_url": "",
+                "_hash": env.get(CONFIG_HASH, ""),
+            }
+        )
+
+    def check(row: dict) -> bool:
+        if row["state"] != "RUNNING" or not row["pod_id"] or not row["port"]:
+            return False
+        return client.health_status(row["pod_id"], row["port"], health_path, 4.0) == 200
+
+    if rows:
+        with ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+            for row, ok in zip(rows, pool.map(check, rows)):
+                row["healthy"] = ok
+            for row, found in zip(rows, pool.map(lambda r: _row_tunnel_url(client, r), rows)):
+                row["tunnel_url"] = found
+    for row in rows:
+        row.pop("_hash", None)
+    log.stdout(json.dumps({"pods": rows}, ensure_ascii=False))
+    return 0
+
+
 def show_status(client: RunPodClient, name: str, log: Redactor) -> int:
     matches = [
         pod
@@ -156,7 +232,19 @@ def show_status(client: RunPodClient, name: str, log: Redactor) -> int:
 def shut_down(
     client: RunPodClient, *, name: str | None, all_pods: bool, log: Redactor
 ) -> int:
-    pods = [pod for pod in client.get_pods() if is_managed(pod) and is_live(pod)]
+    if is_protected(name):
+        log.stderr(f"error: {name} is protected ({PROTECTED_ENV})")
+        return 2
+    try:
+        tunnel = resolve_tunnel()
+    except ConfigError as exc:
+        log.stderr(f"error: {exc}")
+        return 2
+    pods = [
+        pod
+        for pod in client.get_pods()
+        if is_managed(pod) and is_live(pod) and not is_protected(_name_of(pod))
+    ]
     if not all_pods:
         pods = [pod for pod in pods if _name_of(pod) == name]
     if not pods:
@@ -176,7 +264,7 @@ def shut_down(
 
 
 def _allocate(
-    cfg: Config, client: RunPodClient, log: Redactor, started: float
+    cfg: Config, client: RunPodClient, log: Redactor, started: float, tunnel: Tunnel
 ) -> tuple[str, str, float]:
     deadline = time.monotonic() + cfg.allocation_timeout_sec
     last_error = "no GPU candidate could be allocated"
@@ -194,13 +282,13 @@ def _allocate(
         if time.monotonic() > deadline:
             last_error = "allocation timed out"
             break
-        if price is None or price > cfg.max_price_per_hour:
+        if price is None or not isinstance(price, (int, float)):
             _stage(
                 log,
                 "skip",
                 started,
                 gpu=gpu,
-                hourly_price="" if price is None else _price_text(price),
+                hourly_price="",
                 reason="price",
             )
             continue
@@ -213,8 +301,8 @@ def _allocate(
                 gpu_count=cfg.gpu_count,
                 container_disk_gb=cfg.container_disk_gb,
                 ports=f"{cfg.port}/http",
-                docker_args=render_start_command(cfg.args, cfg.ttl_sec, cfg.ttl_text),
-                env=_pod_env(cfg, gpu, price),
+                docker_args=_docker_args(cfg, tunnel),
+                env=_pod_env(cfg, gpu, price, tunnel),
                 network_volume_id=cfg.network_volume_id,
             )
         except Exception as exc:
@@ -245,13 +333,47 @@ def _allocate(
     raise AllocationError(last_error)
 
 
-def _pod_env(cfg: Config, gpu: str, price: float) -> dict[str, str]:
+def _active_hash(cfg: Config, tunnel: Tunnel) -> str:
+    """Separate pods by tunnel mode so switching modes makes a new pod.
+
+    Keys stay out of the hash, so rotating a key still reuses the pod.
+    """
+    return f"{cfg.config_hash}{tunnel.hash_suffix}"
+
+
+def _docker_args(cfg: Config, tunnel: Tunnel) -> str:
+    args = tunnel_docker_args(
+        tunnel,
+        hostname=cfg.name,
+        port=cfg.port,
+        user_args=cfg.args,
+        ttl_seconds=cfg.ttl_sec,
+        ttl_text=cfg.ttl_text,
+        image=cfg.image,
+    )
+    if args is not None:
+        return args
+    return render_start_command(cfg.args, cfg.ttl_sec, cfg.ttl_text)
+
+
+def _pod_env(cfg: Config, gpu: str, price: float, tunnel: Tunnel) -> dict[str, str]:
     env = dict(cfg.env)
+    env.update(tunnel_env(tunnel))
+    # Optional: lets gated Hugging Face models download. The YAML value wins.
+    hf_token = os.environ.get("HF_TOKEN", "").strip()
+    if hf_token and "HF_TOKEN" not in env:
+        env["HF_TOKEN"] = hf_token
+    # Optional: require this key on the model API. llama.cpp reads
+    # LLAMA_ARG_API_KEY and vLLM reads VLLM_API_KEY; /health stays open.
+    model_key = os.environ.get("MODEL_API_KEY", "").strip()
+    if model_key:
+        env.setdefault("LLAMA_ARG_API_KEY", model_key)
+        env.setdefault("VLLM_API_KEY", model_key)
     env.update(
         {
             MANAGED: "1",
             NAME: cfg.name,
-            CONFIG_HASH: cfg.config_hash,
+            CONFIG_HASH: _active_hash(cfg, tunnel),
             TTL_SEC: str(cfg.ttl_sec),
             CREATED_AT: str(int(time.time())),
             PORT: str(cfg.port),
@@ -262,9 +384,9 @@ def _pod_env(cfg: Config, gpu: str, price: float) -> dict[str, str]:
     return env
 
 
-def _find_match(client: RunPodClient, cfg: Config) -> dict | None:
+def _find_match(client: RunPodClient, cfg: Config, tunnel: Tunnel) -> dict | None:
     for pod in client.get_pods():
-        if same_identity(pod, cfg.name, cfg.config_hash):
+        if same_identity(pod, cfg.name, _active_hash(cfg, tunnel)):
             return pod
     return None
 
@@ -372,9 +494,62 @@ def _cleanup(
     )
 
 
-def _print_endpoint(log: Redactor, pod_id: str, url: str) -> None:
+def _print_endpoint(
+    log: Redactor,
+    pod_id: str,
+    url: str,
+    cfg: Config,
+    price: float,
+    tunnel: Tunnel,
+    *,
+    client: RunPodClient | None = None,
+) -> None:
     log.stdout(f"pod_id={pod_id}")
     log.stdout(url)
+    log.stdout(f"hourly_price={_price_text(price)}")
+    log.stdout(f"tunnel={tunnel.label}")
+    if tunnel.mode == "tailscale":
+        log.stdout(f"funnel_hostname={cfg.name}")
+    elif tunnel.mode == "cloudflare" and tunnel.cloudflare_named:
+        host = cloudflare_hostname()
+        if host:
+            log.stdout(f"tunnel_url=https://{host}")
+    elif tunnel.mode == "cloudflare":
+        found = _quick_tunnel_url(client, pod_id) if client is not None else ""
+        if found:
+            log.stdout(f"tunnel_url={found}")
+        else:
+            log.stderr("note: quick tunnel address is printed in the pod log as podrouter-tunnel-url=")
+
+
+def _row_tunnel_url(client: RunPodClient, row: dict) -> str:
+    """Public tunnel address for one listed pod, from the mode stored in its hash."""
+    tag = str(row.get("_hash") or "")
+    if tag.endswith("-cloudflare-quick"):
+        if not row.get("healthy"):
+            return ""
+        try:
+            return find_quick_url(client.pod_logs(row["pod_id"]))
+        except Exception:  # noqa: BLE001 — the address is a convenience, not a failure
+            return ""
+    if tag.endswith("-cloudflare"):
+        host = cloudflare_hostname()
+        return f"https://{host}" if host else ""
+    return ""
+
+
+def _quick_tunnel_url(client: RunPodClient, pod_id: str) -> str:
+    """Read the random trycloudflare.com address from the pod log. Empty if not there yet."""
+    for attempt in range(4):
+        try:
+            found = find_quick_url(client.pod_logs(pod_id))
+        except Exception:  # noqa: BLE001 — the address is a convenience, not a failure
+            found = ""
+        if found:
+            return found
+        if attempt < 3:
+            time.sleep(3)
+    return ""
 
 
 def _stage(log: Redactor, name: str, started: float, **fields: object) -> None:

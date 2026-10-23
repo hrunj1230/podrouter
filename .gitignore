@@ -8,3 +8,14 @@ __pycache__/
 dist/
 build/
 .memsearch/
+.env
+.gpu-up-a40.log
+.gpu-up-stock-poll.py
+.gpu-up-web/
+.DS_Store
+/pods/
+/.runpod-auto/
+.podrouter-a40.log
+.podrouter-stock-poll.py
+.podrouter-web/
+/.podrouter/

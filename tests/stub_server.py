@@ -346,7 +346,7 @@ class StubServer:
                     for item in pod.get("env") or []
                     if isinstance(item, dict)
                 }
-                if env.get("GPU_UP_MANAGED") == "1":
+                if env.get("PODROUTER_MANAGED") == "1":
                     found.append(pod["id"])
             return found
 
@@ -356,8 +356,33 @@ class StubServer:
 
 
 def _field(query: str, name: str) -> str | None:
-    match = re.search(rf'{name}: "([^"]*)"', query)
-    return match.group(1) if match else None
+    marker = f'{name}: "'
+    start = query.find(marker)
+    if start < 0:
+        return None
+    return _graphql_string(query, start + len(marker) - 1)
+
+
+def _graphql_string(query: str, start: int) -> str | None:
+    """Decode one GraphQL double-quoted string. `start` is the opening quote."""
+    if start >= len(query) or query[start] != '"':
+        return None
+    i = start + 1
+    out: list[str] = []
+    while i < len(query):
+        char = query[i]
+        if char == "\\":
+            if i + 1 >= len(query):
+                return None
+            nxt = query[i + 1]
+            out.append({"n": "\n", "r": "\r", "t": "\t"}.get(nxt, nxt))
+            i += 2
+            continue
+        if char == '"':
+            return "".join(out)
+        out.append(char)
+        i += 1
+    return None
 
 
 def _word(query: str, name: str) -> str | None:

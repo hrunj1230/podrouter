@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from gpu_up.errors import ConfigError
+from podrouter.errors import ConfigError
 
 # "3h", "30m", and combinations of those same forms ("1h30m").
 _DURATION = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?$")

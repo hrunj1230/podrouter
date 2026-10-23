@@ -1,0 +1,28 @@
+name: qwen38-27b
+image: ghcr.io/ggml-org/llama.cpp:server-cuda13
+args: -hf bartowski/orcarouter_Qwen3.8-27B-Uncensored-GGUF:Q4_K_M --host 0.0.0.0 --port 8080 -c 196608 -ngl 99 --jinja
+
+gpu:
+  candidates:
+    - NVIDIA A40
+  count: 1
+  cloud: SECURE
+
+storage:
+  container_disk_gb: 60
+  network_volume_id: null
+
+port: 8080
+readiness:
+  path: /health
+  interval_sec: 10
+  timeout_sec: 1800
+
+lifecycle:
+  ttl: 3h
+  idle_timeout: 30m
+
+timeouts:
+  allocation_sec: 180
+  boot_sec: 1200
+  boot_interval_sec: 5

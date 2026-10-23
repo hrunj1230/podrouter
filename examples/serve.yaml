@@ -8,7 +8,6 @@ gpu:
     - NVIDIA RTX A6000
     - NVIDIA A40
   count: 1
-  max_price_per_hour: 0.8
   cloud: SECURE
 
 storage:

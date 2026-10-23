@@ -11,8 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from gpu_up.duration import parse_duration
-from gpu_up.errors import ConfigError
+from podrouter.duration import parse_duration
+from podrouter.errors import ConfigError
 
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _CLOUDS = {"SECURE", "COMMUNITY", "ALL"}
@@ -27,7 +27,7 @@ class Config:
     args: str
     candidates: tuple[str, ...]
     gpu_count: int
-    max_price_per_hour: float
+    max_price_per_hour: float | None
     cloud: str
     container_disk_gb: int
     network_volume_id: str | None
@@ -127,10 +127,13 @@ def _build(raw: dict, config_hash: str, secrets: list[str]) -> Config:
 
     gpu_count = _positive_int(gpu.get("count", 1), "gpu.count")
     max_price = gpu.get("max_price_per_hour")
-    if isinstance(max_price, bool) or not isinstance(max_price, (int, float)):
-        raise ConfigError("gpu.max_price_per_hour is required")
-    if float(max_price) < 0:
-        raise ConfigError("gpu.max_price_per_hour must be >= 0")
+    max_price_per_hour: float | None = None
+    if max_price is not None:
+        if isinstance(max_price, bool) or not isinstance(max_price, (int, float)):
+            raise ConfigError("gpu.max_price_per_hour must be a number")
+        if float(max_price) < 0:
+            raise ConfigError("gpu.max_price_per_hour must be >= 0")
+        max_price_per_hour = float(max_price)
 
     cloud = str(gpu.get("cloud", "")).strip().upper()
     if cloud not in _CLOUDS:
@@ -199,7 +202,7 @@ def _build(raw: dict, config_hash: str, secrets: list[str]) -> Config:
         args=args,
         candidates=tuple(candidates),
         gpu_count=gpu_count,
-        max_price_per_hour=float(max_price),
+        max_price_per_hour=max_price_per_hour,
         cloud=cloud,
         container_disk_gb=disk,
         network_volume_id=volume if isinstance(volume, str) else None,

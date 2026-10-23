@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>podrouter 동작</title>
+<style>
+  :root {
+    --paper: #f3efe6;
+    --ink: #1b1914;
+    --muted: #5e584e;
+    --line: #d5cec1;
+    --card: #fffdf8;
+    --green: #0e6b52;
+    --green-bg: #e5f4ee;
+    --amber: #8a5a00;
+    --amber-bg: #f8efd8;
+    --red: #8d2d2d;
+    --red-bg: #f8e6e4;
+    --blue: #1d4e89;
+    --blue-bg: #e6eef8;
+    --shadow: 0 1px 0 rgba(27, 25, 20, 0.04);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 400px at 10% -10%, #efe6d2 0%, transparent 55%),
+      var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 "Avenir Next", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+  }
+  a { color: var(--blue); }
+  header, main { width: min(1080px, calc(100% - 32px)); margin: 0 auto; }
+  header { padding: 48px 0 12px; }
+  .kicker {
+    margin: 0 0 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  h1 { margin: 0 0 12px; font-size: 42px; line-height: 1.15; font-weight: 650; letter-spacing: -0.03em; }
+  .lede { margin: 0; max-width: 68ch; font-size: 18px; }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 22px 0 8px;
+  }
+  nav a {
+    text-decoration: none;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  section { margin: 28px 0 8px; }
+  h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.02em; }
+  h3 { margin: 0 0 6px; font-size: 16px; }
+  p { margin: 0 0 10px; }
+  .note { color: var(--muted); font-size: 14px; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .node, .card, .lane, .step {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+  }
+  .node { padding: 14px 14px 12px; position: relative; }
+  .node .n {
+    display: inline-block;
+    font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .node strong, .lane strong, .step strong { display: block; font-size: 15px; }
+  .node span, .lane li, .step p, .card p { color: var(--muted); font-size: 13.5px; }
+  code, .mono {
+    font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .lanes { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: 12px; }
+  .lane { padding: 16px; }
+  .lane ol, .plain { margin: 8px 0 0; padding-left: 18px; }
+  .lane li { margin: 0 0 6px; }
+  .tag {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .look { background: var(--blue-bg); color: var(--blue); }
+  .once { background: var(--green-bg); color: var(--green); }
+  .retry { background: var(--amber-bg); color: var(--amber); }
+  .kill { background: var(--red-bg); color: var(--red); }
+  .flow { display: grid; gap: 0; margin-top: 8px; }
+  .step {
+    padding: 14px 16px;
+    border-radius: 14px;
+    position: relative;
+  }
+  .step + .step { margin-top: 10px; }
+  .step + .step::before {
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: 28px;
+    width: 1px;
+    height: 10px;
+    background: #b7b0a4;
+  }
+  .step .who { font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .card { padding: 16px; }
+  .card.ok { border-color: #b7d8cb; background: linear-gradient(#fffdf8, #f3faf7); }
+  .card.bad { border-color: #e4c2be; background: linear-gradient(#fffdf8, #fdf6f5); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 16px; overflow: hidden; border: 1px solid var(--line); }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+  th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+  tr:last-child td { border-bottom: 0; }
+  footer { width: min(1080px, calc(100% - 32px)); margin: 28px auto 48px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 860px) {
+    h1 { font-size: 32px; }
+    .board, .lanes, .split { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <p class="kicker">podrouter · Runpod Pod</p>
+  <h1>설정 하나에서 Pod 하나, 주소 하나.</h1>
+  <p class="lede">로컬 화면이나 CLI가 YAML을 읽고 Runpod에 Pod를 만듭니다. 뜨면 <span class="mono">https://&lt;pod-id&gt;-&lt;포트&gt;.proxy.runpod.net</span> 를 돌려주고, 그 시도가 실패하면 방금 만든 Pod만 지웁니다.</p>
+  <nav>
+    <a href="#map">전체</a>
+    <a href="#screen">화면의 세 버튼</a>
+    <a href="#job">생성 재시도</a>
+    <a href="#up">up 한 번</a>
+    <a href="#own">누구를 끄나</a>
+    <a href="#limits">한도</a>
+  </nav>
+</header>
+<main>
+  <section id="map">
+    <h2>전체 경로</h2>
+    <p class="note">키는 브라우저로 나가지 않습니다. 페이지는 로컬 서버만 부르고, 서버가 <span class="mono">.env</span>의 <span class="mono">RUNPOD_API_KEY</span>로 Runpod GraphQL을 부릅니다.</p>
+    <div class="board">
+      <article class="node">
+        <div class="n">01</div>
+        <strong>브라우저</strong>
+        <span>127.0.0.1 전용 페이지. 재고 표, 띄우기 폼, 이 도구가 만든 Pod 목록.</span>
+      </article>
+      <article class="node">
+        <div class="n">02</div>
+        <strong>로컬 서버</strong>
+        <span><span class="mono">podrouter web</span>. 다른 주소로 열리면 거절. 생성은 한 번에 하나.</span>
+      </article>
+      <article class="node">
+        <div class="n">03</div>
+        <strong>podrouter up / down</strong>
+        <span>서버가 임시 YAML을 쓰고 CLI를 한 번 실행합니다. 끝나면 파일을 지웁니다.</span>
+      </article>
+      <article class="node">
+        <div class="n">04</div>
+        <strong>Runpod</strong>
+        <span><span class="mono">api.runpod.io/graphql</span>. 생성은 <span class="mono">podFindAndDeployOnDemand</span>.</span>
+      </article>
+    </div>
+  </section>
+
+  <section id="screen">
+    <h2>화면의 세 동작</h2>
+    <p class="note">재고 표의 “자리 있음”은 보여 주기용입니다. 실제 배정은 생성 요청이 결정합니다. 표에 자리가 없어도 생성 버튼은 생성을 시도합니다.</p>
+    <div class="lanes">
+      <article class="lane">
+        <div class="tag look">조회</div>
+        <h3>폴링 시작, 재시도 끔</h3>
+        <ol>
+          <li>15–300초, 기본 60초마다 <span class="mono">GET /api/gpus</span></li>
+          <li>GPU 종류, 가격, 재고만 다시 그립니다</li>
+          <li>1달러 미만이고 자리가 없다가 생기면 배너를 띄웁니다</li>
+          <li>Pod를 만들지 않습니다</li>
+        </ol>
+      </article>
+      <article class="lane">
+        <div class="tag once">한 번</div>
+        <h3>이 설정으로 띄우기</h3>
+        <ol>
+          <li><span class="mono">POST /api/launch</span>, 재시도 없음</li>
+          <li>헬스 체크를 켜면 <span class="mono">/health</span>가 200이 될 때까지 기다립니다</li>
+          <li>끄면 Pod id와 주소만 받고 끝냅니다</li>
+          <li>자리가 없으면 그 요청은 거기서 끝입니다</li>
+        </ol>
+      </article>
+      <article class="lane">
+        <div class="tag retry">반복</div>
+        <h3>재시도 켜고 폴링 시작</h3>
+        <ol>
+          <li>확인창 뒤에 생성 작업을 엽니다</li>
+          <li>헬스 대기는 강제로 꺼집니다</li>
+          <li>간격은 15초 이상 300초 이하, 횟수는 1–240, 기본은 15초와 240번</li>
+          <li>표 갱신은 따로 계속됩니다</li>
+          <li>폴링 멈춤은 <span class="mono">POST /api/cancel</span></li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <section id="job">
+    <h2>생성 작업이 도는 순서</h2>
+    <p class="note">작업은 메모리에만 있습니다. 서버를 끄면 진행 중 표시도 사라집니다. 이미 만들어진 Pod는 서버 프로세스와 별개로 Runpod에 남습니다.</p>
+    <div class="flow">
+      <article class="step">
+        <div class="who">검사</div>
+        <strong>키가 비었거나, 이름·이미지·가격·TTL이 형식에 안 맞으면 400</strong>
+        <p>이름과 GPU id, 이미지에 허용된 글자만. TTL은 <span class="mono">3h</span>, <span class="mono">30m</span>처럼 읽힙니다. 시간당 가격 상한은 생성을 막지 않습니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">잠금</div>
+        <strong>이미 생성이 돌고 있으면 “a launch is already running”</strong>
+        <p>잠금은 성공, 실패, 취소 다음에 풀립니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">시도마다</div>
+        <strong>카탈로그에서 시간당 GPU 가격을 확인한다</strong>
+        <p>가격이 숫자로 확인되면 그 금액으로 생성을 시도합니다. 가격을 모르면 그 GPU는 건너뜁니다. 금액이 크다는 이유만으로 멈추지 않습니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">실행</div>
+        <strong>임시 YAML을 0600으로 쓰고 <span class="mono">podrouter up</span>을 한 번 돌린 뒤 파일을 지움</strong>
+        <p>재시도 경로는 <span class="mono">--wait=false</span>라서, 주소가 나오면 그 Pod를 헬스 실패로 지우지 않습니다. 제한 시간은 대기 없음 180초, 헬스 대기 1200초.</p>
+      </article>
+      <article class="step">
+        <div class="who">갈림</div>
+        <strong>주소가 나오면 성공으로 종료하고 <span class="mono">hourly_price</span>를 같이 돌려준다. 마지막 횟수면 “no seat within the attempt limit”</strong>
+        <p>그 외에는 간격만큼 1초씩 자면서 취소를 확인합니다. 취소 문구는 “취소했습니다”.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="up">
+    <h2>podrouter up 한 번의 속</h2>
+    <div class="flow">
+      <article class="step">
+        <div class="who">설정</div>
+        <strong>YAML을 읽고 <span class="mono">${이름}</span>만 환경변수로 바꿈</strong>
+        <p>비밀이 비어 있으면 만들기 전에 끝냅니다. 해시가 가리키는 것은 치환 전 YAML입니다. 같은 이름이라도 설정이 다르면 다른 Pod입니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">재사용</div>
+        <strong>이미 살아있는 같은 이름, 같은 해시 Pod가 있으면 주소를 다시 찍고 새로 만들지 않음</strong>
+        <p>표시는 <span class="mono">PODROUTER_MANAGED=1</span> 이고 상태가 종료·종료됨·죽음·실패가 아닌 Pod만 해당합니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">후보</div>
+        <strong>GPU 목록을 위에서 아래로 한 번씩</strong>
+        <p>가격 조회가 재고·영구 오류면 다음 GPU. 가격을 숫자로 확인할 수 없으면 다음 GPU. 가격이 있으면 상한과 관계없이 생성을 시도합니다. 생성이 재고 오류거나 id가 없으면 다음 GPU. id가 돌아오면 그 GPU로 확정하고 아래 후보는 보지 않습니다. 결과에는 <span class="mono">hourly_price</span>가 찍힙니다. 화면 폼은 GPU를 하나만 넣습니다.</p>
+      </article>
+      <article class="step">
+        <div class="who">컨테이너</div>
+        <strong>시작 명령 앞에 TTL 타이머를 붙임</strong>
+        <p><span class="mono">sleep &lt;초&gt;</span> 뒤에 <span class="mono">runpodctl remove pod $RUNPOD_POD_ID</span>, 그리고 사용자가 적은 인자. 로컬 프로세스는 이 타이머에 관여하지 않습니다. 이미지에 <span class="mono">runpodctl</span>이 없으면 시간 내 자동 종료는 실패할 수 있고, 그때는 <span class="mono">down</span>까지 과금이 이어집니다.</p>
+      </article>
+    </div>
+    <div class="split">
+      <article class="card ok">
+        <div class="tag once">남김</div>
+        <h3>성공</h3>
+        <p><span class="mono">--wait=false</span>면 id와 주소를 찍고 끝. <span class="mono">--wait=true</span>면 상태가 RUNNING이 된 다음 <span class="mono">/health</span>가 200일 때까지 보고, 그다음 주소를 찍습니다. 주소에는 경로를 붙이지 않습니다. 성공한 Pod는 지우지 않습니다.</p>
+      </article>
+      <article class="card bad">
+        <div class="tag kill">지움</div>
+        <h3>id가 생긴 뒤의 실패</h3>
+        <p>부팅 시간 초과, 헬스 시간 초과, API 예외, Ctrl+C. 로그 마지막 50줄을 찍고 그 Pod를 종료합니다. 종료 중 추가 Ctrl+C는 무시합니다. 비밀 값은 로그에서 지웁니다. id가 생기기 전의 실패는 지울 Pod가 없습니다.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="own">
+    <h2>끄고 목록에 나오는 범위</h2>
+    <p class="note"><span class="mono">ls</span>, <span class="mono">status</span>, <span class="mono">down</span>, 화면의 Pod 표는 같은 조건을 봅니다. 콘솔에서 직접 만든 Pod는 이 목록에 없고, 끄기에도 걸리지 않습니다.</p>
+    <table>
+      <thead>
+        <tr><th>명령</th><th>하는 일</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">ls</td><td>관리 중이고 살아있는 Pod의 id, 이름, 상태, 시간당 가격</td></tr>
+        <tr><td class="mono">status &lt;이름&gt;</td><td>상태, 시간당 가격, 설정 TTL, 남은 TTL. 남은 시간은 0과 TTL 사이</td></tr>
+        <tr><td class="mono">down &lt;이름&gt;</td><td>그 이름의 관리 Pod만 종료</td></tr>
+        <tr><td class="mono">down --all</td><td>이 도구가 만든 살아있는 Pod 전부 종료</td></tr>
+        <tr><td>화면의 끄기</td><td><span class="mono">down &lt;이름&gt;</span>과 같습니다</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="limits">
+    <h2>호출을 다시 하는 범위</h2>
+    <table>
+      <thead>
+        <tr><th>층</th><th>다시 하는 조건</th><th>멈추는 조건</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SDK 한 호출</td>
+          <td>전송 오류, 5xx성 응답, 재고가 아닌 GraphQL 오류. 기본 5번, 0.5초에서 두 배</td>
+          <td>재고·용량 문구, 인증 오류, 값 오류, Ctrl+C</td>
+        </tr>
+        <tr>
+          <td>up의 GPU 목록</td>
+          <td>위 후보가 가격·재고·id 없음이면 다음 후보 한 번</td>
+          <td>id를 받았거나, 후보가 끝났거나, 배정 시간이 지남</td>
+        </tr>
+        <tr>
+          <td>화면 재시도</td>
+          <td>한 번 up이 주소 없이 끝나면 15초 이상 쉬고 다음 시도</td>
+          <td>성공, 취소, 최대 240회</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">화면이 Runpod에 보내는 생성은 GraphQL입니다. 이 계정 REST 한도로 확인된 값은 분당 180, 시간당 7200, 하루 86400이고, 초과는 429입니다. 15초마다 한 번이면 분당 4회입니다. GraphQL 숫자 한도는 공개돼 있지 않고, Runpod는 2026-10-27부터 GraphQL 제한을 시작한다고 적었습니다.</p>
+  </section>
+</main>
+<footer>
+  기준 코드: src/podrouter/web.py, provision.py, client.py, pods.py, config.py, reaper.py, static/index.html
+</footer>
+</body>
+</html>

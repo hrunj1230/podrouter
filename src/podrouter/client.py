@@ -13,7 +13,7 @@ import runpod
 from runpod import error as runpod_error
 from runpod.api.graphql import run_graphql_query
 
-from gpu_up.urls import health_url
+from podrouter.urls import health_url
 
 T = TypeVar("T")
 
@@ -91,8 +91,8 @@ class RunPodClient:
                 container_disk_in_gb=container_disk_gb,
                 volume_in_gb=0,
                 ports=ports,
-                docker_args=docker_args,
-                env=env,
+                docker_args=graphql_string(docker_args),
+                env={key: graphql_string(value) for key, value in env.items()},
                 network_volume_id=network_volume_id,
             )
 
@@ -159,6 +159,11 @@ class RunPodClient:
         raise last
 
 
+def graphql_string(value: str) -> str:
+    """Escape a value for the SDK's unescaped GraphQL double-quoted scalar."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _price_for_cloud(gpu: dict, cloud: str) -> float | None:
     cloud = cloud.upper()
     if cloud == "SECURE":
@@ -191,7 +196,7 @@ def _as_price(value: object) -> float | None:
 
 
 def _base_delay() -> float:
-    raw = os.environ.get("GPU_UP_RETRY_BASE_SEC", "0.5")
+    raw = os.environ.get("PODROUTER_RETRY_BASE_SEC", "0.5")
     try:
         value = float(raw)
     except ValueError:
@@ -200,7 +205,7 @@ def _base_delay() -> float:
 
 
 def _attempts() -> int:
-    raw = os.environ.get("GPU_UP_RETRY_ATTEMPTS", "5")
+    raw = os.environ.get("PODROUTER_RETRY_ATTEMPTS", "5")
     try:
         value = int(raw)
     except ValueError:
