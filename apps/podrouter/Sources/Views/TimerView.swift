@@ -191,13 +191,28 @@ struct TimerView: View {
                             entry.wrappedValue.weekdays.insert(item.index)
                         }
                     } label: {
-                        Text(item.name)
-                            .font(.subheadline)
-                            .fontWeight(isSelected ? .bold : .regular)
-                            .frame(minWidth: 28, minHeight: 22)
+                        VStack(spacing: 1) {
+                            Text(item.name)
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                            Text(isSelected ? "ON" : "OFF")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                        .frame(width: 40, height: 38)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isSelected ? Color.accentColor : Color.gray.opacity(0.15))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(isSelected ? Color.clear : Color.gray.opacity(0.4))
+                        )
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.bordered)
-                    .tint(isSelected ? .blue : .gray)
+                    .buttonStyle(.plain)
+                    .help(isSelected ? "\(item.name)요일 켜짐 · 누르면 끕니다" : "\(item.name)요일 꺼짐 · 누르면 켭니다")
                 }
 
                 Spacer().frame(width: 16)
