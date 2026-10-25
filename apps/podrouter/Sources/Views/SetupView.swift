@@ -25,12 +25,14 @@ struct SetupView: View {
                                     .padding(.vertical, 4)
                             }
                             .buttonStyle(.borderedProminent)
+                            .tint(AIColors.claude)
 
                             Button(action: openCodex) {
                                 Label("Codex로 설정 안내", systemImage: "terminal")
                                     .padding(.vertical, 4)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.borderedProminent)
+                            .tint(AIColors.codex)
                         }
 
                         Divider()

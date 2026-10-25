@@ -62,6 +62,8 @@ struct PodView: View {
                             Button(action: openClaudeChat) {
                                 Label("Claude와 대화로 만들기", systemImage: "bubble.left.and.text.bubble.right")
                             }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AIColors.claude)
                             .disabled(appState.isExecuting)
                         }
 
