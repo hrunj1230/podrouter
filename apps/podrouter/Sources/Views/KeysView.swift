@@ -362,11 +362,19 @@ struct KeysView: View {
                 Button("저장") { saveTailnet() }
                     .disabled(tailnetInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            Text(appState.tsTailnet.isEmpty
-                 ? "Tailscale 관리 화면 → DNS → Tailnet name 에 있습니다. 연결 설정 화면이 Pod 주소를 만들 때 씁니다."
-                 : "저장됨: https://<Pod 이름>.\(appState.tsTailnet)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if appState.tsTailnet.isEmpty {
+                Text("Tailscale 관리 화면 → DNS → Tailnet name 에 있습니다. 연결 설정 화면이 Pod 주소를 만들 때 씁니다.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    statusBadge(for: "저장됨")
+                    Text("https://<Pod 이름>.\(appState.tsTailnet)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
         }
     }
 
