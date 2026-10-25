@@ -274,7 +274,9 @@ def test_equal_times_means_24_hours() -> None:
     assert not is_inside_any_window(datetime(2026, 10, 27, 9, 0, 0), windows)
 
 
-def test_protected_pod_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_protected_pod_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("PODROUTER_PROTECTED_PODS", "keep-me")
     sched_file = _write_schedule(tmp_path / "schedule.json", pod_name="keep-me")
     state_file = tmp_path / "state.json"
@@ -590,7 +592,9 @@ def test_activity_log_rotates(tmp_path: Path) -> None:
 
     path = tmp_path / "logs" / "activity.jsonl"
     for i in range(5):
-        append_event(path, source="app", action="start", pod=f"p{i}", ok=True, max_bytes=150)
+        append_event(
+            path, source="app", action="start", pod=f"p{i}", ok=True, max_bytes=150
+        )
     assert path.exists()
     assert (tmp_path / "logs" / "activity.1.jsonl").exists()
     assert len(path.read_text().splitlines()) < 5
@@ -600,15 +604,21 @@ def test_ttl_until_window_end() -> None:
     from podrouter.local_schedule import ttl_until_window_end
 
     day = validate_schedule(
-        {"pod_name": "p", "config_path": "x.yaml",
-         "windows": [{"weekdays": [0, 1, 2, 3, 4], "on": "09:00", "off": "18:00"}]}
+        {
+            "pod_name": "p",
+            "config_path": "x.yaml",
+            "windows": [{"weekdays": [0, 1, 2, 3, 4], "on": "09:00", "off": "18:00"}],
+        }
     )["windows"]
     assert ttl_until_window_end(datetime(2026, 10, 26, 10, 0), day) == "8h15m"
     assert ttl_until_window_end(datetime(2026, 10, 26, 17, 30), day) == "45m"
 
     night = validate_schedule(
-        {"pod_name": "p", "config_path": "x.yaml",
-         "windows": [{"weekdays": [0], "on": "22:00", "off": "02:00"}]}
+        {
+            "pod_name": "p",
+            "config_path": "x.yaml",
+            "windows": [{"weekdays": [0], "on": "22:00", "off": "02:00"}],
+        }
     )["windows"]
     assert ttl_until_window_end(datetime(2026, 10, 26, 23, 30), night) == "2h45m"
 
@@ -683,7 +693,9 @@ def test_multi_pod_failure_does_not_block_others(tmp_path: Path) -> None:
     )
 
     class FailFirst(FakeRunner):
-        def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        def __call__(
+            self, argv: list[str], **kwargs: Any
+        ) -> subprocess.CompletedProcess[str]:
             self.calls.append({"argv": list(argv), "kwargs": kwargs})
             rc = 1 if "/tmp/a-pod.yaml" in argv else 0
             return subprocess.CompletedProcess(argv, rc, "", "boom" if rc else "")

@@ -16,8 +16,8 @@ from podrouter.tunnel import (
     resolve_tunnel,
     tunnel_env,
 )
-from tests.test_acceptance import run, up_cmd, write_config
 from tests.stub_server import StubServer
+from tests.test_acceptance import run, up_cmd, write_config
 
 CF = "cf-tunnel-token-not-in-logs"
 TS = "tskey-auth-test-not-in-logs"
@@ -25,7 +25,12 @@ TS = "tskey-auth-test-not-in-logs"
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    for name in ("PODROUTER_TUNNEL", "TS_AUTHKEY", "CF_TUNNEL_TOKEN", "CF_TUNNEL_HOSTNAME"):
+    for name in (
+        "PODROUTER_TUNNEL",
+        "TS_AUTHKEY",
+        "CF_TUNNEL_TOKEN",
+        "CF_TUNNEL_HOSTNAME",
+    ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -86,7 +91,9 @@ def test_cloudflare_script_is_valid_bash(named: bool) -> None:
         )
     )
     script = payload["cmd"][0]
-    check = subprocess.run(["bash", "-n", "-c", script], capture_output=True, text=True)
+    check = subprocess.run(
+        ["bash", "-n", "-c", script], capture_output=True, text=True, check=False
+    )
     assert check.returncode == 0, check.stderr
     assert "exec /app/llama-server -hf a/b:Q4" in script
 
@@ -194,7 +201,9 @@ def test_ls_json_reports_named_tunnel_hostname(tmp_path: Path) -> None:
         }
         first = run(stub, [*up_cmd(cfg), "--wait=false"], extra_env=env)
         assert first.returncode == 0, first.stderr
-        ls = run(stub, ["ls", "--json", "--api-key", "${PODROUTER_TEST_KEY}"], extra_env=env)
+        ls = run(
+            stub, ["ls", "--json", "--api-key", "${PODROUTER_TEST_KEY}"], extra_env=env
+        )
         assert CF not in ls.stdout + ls.stderr
         pods = json.loads(ls.stdout)["pods"]
         assert pods[0]["tunnel_url"] == "https://llm.example.com"

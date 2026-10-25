@@ -170,7 +170,9 @@ def list_pods(client: RunPodClient, log: Redactor) -> int:
     return 0
 
 
-def list_pods_json(client: RunPodClient, log: Redactor, health_path: str = "/health") -> int:
+def list_pods_json(
+    client: RunPodClient, log: Redactor, health_path: str = "/health"
+) -> int:
     """Print managed live pods as JSON, each with a quick health check.
 
     `healthy` is true only when the health URL answers 200. The Mac app uses it to
@@ -209,7 +211,9 @@ def list_pods_json(client: RunPodClient, log: Redactor, health_path: str = "/hea
         with ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
             for row, ok in zip(rows, pool.map(check, rows)):
                 row["healthy"] = ok
-            for row, found in zip(rows, pool.map(lambda r: _row_tunnel_url(client, r), rows)):
+            for row, found in zip(
+                rows, pool.map(lambda r: _row_tunnel_url(client, r), rows)
+            ):
                 row["tunnel_url"] = found
     for row in rows:
         row.pop("_hash", None)
@@ -254,7 +258,7 @@ def shut_down(
         log.stderr(f"error: {name} is protected ({PROTECTED_ENV})")
         return 2
     try:
-        tunnel = resolve_tunnel()
+        resolve_tunnel()  # rejects a bad tunnel setting before touching pods
     except ConfigError as exc:
         log.stderr(f"error: {exc}")
         return 2
@@ -583,7 +587,9 @@ def _print_endpoint(
         if found:
             log.stdout(f"tunnel_url={found}")
         else:
-            log.stderr("note: quick tunnel address is printed in the pod log as podrouter-tunnel-url=")
+            log.stderr(
+                "note: quick tunnel address is printed in the pod log as podrouter-tunnel-url="
+            )
 
 
 def _row_tunnel_url(client: RunPodClient, row: dict) -> str:
