@@ -57,6 +57,15 @@ Xcode 명령줄 도구(`xcode-select --install`)와 Python 3.10 이상(또는 uv
 | 5. 타이머 | 요일(ON/OFF)과 켜는/끄는 시각을 정하면 launchd가 15초마다 확인해 자동으로 켜고 끕니다. 자리가 없으면 시간대 안에서 계속 다시 시도하고 macOS 알림으로 알려줍니다. 앱을 꺼도 동작하지만, Mac이 켜져 있고 깨어 있을 때만 동작합니다. |
 | 6. 로그 | 앱과 타이머가 한 일을 시간순으로 봅니다. 키는 가려집니다. |
 
+### 상단바
+
+맥 상단바의 번개 아이콘으로 창을 열지 않고 Pod 상태를 보고 켜고 끕니다.
+
+- 아이콘: 켜짐 `bolt.fill`, 켜는 중 `bolt.badge.clock`, 모두 꺼짐 `bolt.slash`
+- 아이콘을 누르면 Pod 목록(상태, 시간당 가격), 켜기·끄기, 주소 복사, **창 열기**, **종료**가 나옵니다.
+- 창을 닫아도 앱은 상단바에 남고 Dock 아이콘만 사라집니다. 완전히 끄려면 상단바의 **종료** 또는 ⌘Q를 누릅니다.
+- **로그인할 때 자동 실행**을 켜면 맥에 로그인할 때 창 없이 상단바로만 시작합니다. 시스템 설정 > 일반 > 로그인 항목에도 나옵니다.
+
 호출 주소는 OpenAI 호환 API입니다. 경로 `/v1`을 붙여 씁니다.
 
 ```bash
@@ -152,7 +161,6 @@ Tailscale과 Cloudflare 터널은 Pod 안에서 모델 서버 옆에 함께 실�
 | `TS_AUTHKEY` | Tailscale 방식일 때 | Tailscale Auth key |
 | `CF_TUNNEL_TOKEN` | 아니오 | 있으면 Cloudflare Named Tunnel, 없으면 Quick Tunnel |
 | `CF_TUNNEL_HOSTNAME` | 아니오 | Named Tunnel 주소. 화면 표시용 |
-| `XAI_API_KEY` | 아니오 | 웹 화면(`podrouter web`)의 AI YAML 만들기에만 |
 
 ## CLI (`podrouter`)
 
@@ -168,7 +176,6 @@ podrouter ls --api-key '${RUNPOD_API_KEY}'                         # 이 도구�
 podrouter ls --json --api-key '${RUNPOD_API_KEY}'                  # 앱이 쓰는 형식 (헬스 체크 포함)
 podrouter down qwen38-27b --api-key '${RUNPOD_API_KEY}'
 podrouter down --all --api-key '${RUNPOD_API_KEY}'
-podrouter web                                                      # http://127.0.0.1:8765 재고 확인·켜기 화면
 podrouter schedule show | install | tick                           # 타이머 (앱이 호출)
 ```
 
@@ -228,7 +235,7 @@ timeouts:
 
 ```
 .
-├── src/podrouter/               Python 패키지 (CLI, Runpod 호출, 웹, 타이머)
+├── src/podrouter/               Python 패키지 (CLI, Runpod 호출, 타이머)
 │   ├── cli.py                podrouter 명령 파싱
 │   ├── config.py             YAML 읽기, ${ENV} 치환, 설정 해시
 │   ├── provision.py          Pod 생성 → 부팅 대기 → 헬스 체크 → 실패 시 종료
@@ -236,11 +243,12 @@ timeouts:
 │   ├── tunnel.py, funnel.py  공개 주소 방식 (Cloudflare, Tailscale)
 │   ├── local_schedule.py     launchd 타이머 (schedule install / tick)
 │   ├── planner.py            GPU·모델 고르기 규칙과 YAML 만들기
-│   ├── web.py, static/       podrouter web 로컬 화면
+│   ├── catalog.py            GPU 가격·재고 조회
+│   ├── envfile.py            .env 읽기와 키 가림
 │   └── paths.py              데이터 폴더(PODROUTER_HOME) 위치
 ├── apps/podrouter/         SwiftUI 맥 앱
 │   └── Sources/
-│       ├── Views/            화면 6개 (설정 안내, 키, Pod, 전원, 타이머, 로그)
+│       ├── Views/            화면 7개와 상단바 (설정 안내, 키, Pod, 전원, 타이머, 로그, 연결)
 │       ├── Models/           앱 상태
 │       └── Services/         Runtime(설치형/개발용 판별), PythonSetup(첫 실행 준비),
 │                             SecretStore(.env), ProcessRunner, Redactor, ActivityLog
@@ -286,4 +294,4 @@ swift build --package-path apps/podrouter
 
 - [docs/user-setup.md](docs/user-setup.md): 키, Tailscale, Cloudflare 설정 상세
 - [docs/adr/0001-tailscale-funnel.md](docs/adr/0001-tailscale-funnel.md): 고정 주소 방식을 고른 이유
-- `docs/pod-lifecycle.html`, `docs/service-logic.html`: Pod 수명과 서비스 흐름 그림
+- `docs/service-logic.html`: 서비스 흐름 그림

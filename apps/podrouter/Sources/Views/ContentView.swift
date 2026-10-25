@@ -26,7 +26,7 @@ enum NavigationItem: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
-    @StateObject private var appState = AppState()
+    @ObservedObject var appState: AppState
     @State private var selectedItem: NavigationItem? = .setup
     @State private var showingSettings: Bool = false
     @State private var folderMessage: String?

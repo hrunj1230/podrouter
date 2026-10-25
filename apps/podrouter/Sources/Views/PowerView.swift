@@ -2,49 +2,13 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// One managed pod as reported by `podrouter ls --json`.
-struct PodRuntime: Decodable {
-    let name: String
-    let pod_id: String
-    let state: String
-    let hourly_price: Double
-    let port: Int
-    let url: String
-    let healthy: Bool
-    let tunnel_url: String?
-
-    /// Public tunnel address when known, otherwise the Runpod proxy address.
-    var publicURL: String {
-        if let t = tunnel_url, !t.isEmpty { return t }
-        return url
-    }
-}
-
-struct PodListPayload: Decodable {
-    let pods: [PodRuntime]
-}
-
 struct PowerView: View {
     @ObservedObject var appState: AppState
+    @EnvironmentObject private var monitor: PodMonitor
 
     @State private var query: String = ""
-    @State private var runtimes: [String: PodRuntime] = [:]
-    @State private var lastChecked: Date?
-    @State private var isChecking: Bool = false
-    @State private var listError: String?
-    /// Pod name -> "켜는 중" / "끄는 중" while a command runs.
-    @State private var busy: [String: String] = [:]
     @State private var pendingOn: String?
     @State private var pendingOff: String?
-    @State private var outputLog: String = ""
-    @State private var statusMessage: String?
-    @State private var isError: Bool = false
-
-    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
-
-    private enum PowerState {
-        case checking, off, starting(String), ready, busy(String), unknown
-    }
 
     var body: some View {
         ScrollView {
@@ -68,7 +32,7 @@ struct PowerView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .frame(maxWidth: 260)
                             Spacer()
-                            if isChecking {
+                            if monitor.isChecking {
                                 ProgressView().controlSize(.small)
                             }
                             Text(lastCheckedText)
@@ -76,15 +40,15 @@ struct PowerView: View {
                                 .foregroundColor(.secondary)
                             Button {
                                 appState.refreshSavedPods()
-                                refreshStatus()
+                                monitor.refresh()
                             } label: {
                                 Image(systemName: "arrow.clockwise")
                             }
                             .help("상태 새로고침")
-                            .disabled(isChecking)
+                            .disabled(monitor.isChecking)
                         }
 
-                        if let err = listError {
+                        if let err = monitor.listError {
                             Text("상태 확인 실패: \(err)")
                                 .font(.caption)
                                 .foregroundColor(.red)
@@ -111,28 +75,62 @@ struct PowerView: View {
                     .padding(8)
                 }
 
-                if let status = statusMessage {
+                if let status = monitor.statusMessage {
                     HStack {
-                        Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                        Image(systemName: monitor.isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
                         Text(status)
                             .font(.subheadline)
                     }
-                    .foregroundColor(isError ? .red : .green)
+                    .foregroundColor(monitor.isError ? .red : .green)
                     .padding(8)
-                    .background((isError ? Color.red : Color.green).opacity(0.1))
+                    .background((monitor.isError ? Color.red : Color.green).opacity(0.1))
                     .cornerRadius(8)
                 }
 
-                GroupBox(label: Label("명령어 실행 출력 (키 마스킹 적용)", systemImage: "terminal")) {
-                    ScrollView {
-                        Text(outputLog.isEmpty ? "실행 결과가 여기에 표시됩니다." : outputLog)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(outputLog.isEmpty ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(4)
-                            .textSelection(.enabled)
+                GroupBox(label: Label("마지막 명령과 응답 (키 마스킹 적용)", systemImage: "terminal")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let run = monitor.lastRun {
+                            HStack(spacing: 8) {
+                                Text("\(run.pod) \(run.label)")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Text(RunStore.timeText(run.started))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if run.recorded {
+                                    Text(run.exitCode == 0 ? "완료" : "실패 (종료 코드 \(run.exitCode ?? -1))")
+                                        .font(.caption2)
+                                        .foregroundColor(run.exitCode == 0 ? .green : .red)
+                                } else {
+                                    ProgressView().controlSize(.mini)
+                                    Text("진행 중 · 앱을 꺼도 계속됩니다")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                }
+                                Spacer()
+                                Button("로그 폴더") {
+                                    NSWorkspace.shared.open(RunStore.directoryURL)
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                            }
+                        }
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                Text(monitor.lastRunText.isEmpty ? "켜기·끄기를 누르면 보낸 명령과 응답이 여기에 실시간으로 표시됩니다." : monitor.lastRunText)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(monitor.lastRunText.isEmpty ? .secondary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(4)
+                                    .textSelection(.enabled)
+                                Color.clear.frame(height: 1).id("end")
+                            }
+                            .frame(minHeight: 160, maxHeight: 320)
+                            .onChange(of: monitor.lastRunText) { _ in
+                                proxy.scrollTo("end", anchor: .bottom)
+                            }
+                        }
                     }
-                    .frame(minHeight: 120, maxHeight: 220)
                 }
 
                 Spacer()
@@ -141,10 +139,7 @@ struct PowerView: View {
             .onAppear {
                 appState.refreshKeyStatus()
                 appState.refreshSavedPods()
-                refreshStatus()
-            }
-            .onReceive(refreshTimer) { _ in
-                refreshStatus()
+                monitor.refresh()
             }
             .confirmationDialog(
                 "시간당 GPU 요금이 청구되기 시작합니다.",
@@ -152,7 +147,7 @@ struct PowerView: View {
                 titleVisibility: .visible,
                 presenting: pendingOn
             ) { name in
-                Button("요금 청구에 동의하고 '\(name)' 켜기") { powerOn(name) }
+                Button("요금 청구에 동의하고 '\(name)' 켜기") { monitor.powerOn(name) }
                 Button("취소", role: .cancel) {}
             } message: { name in
                 Text("'\(name)' 설정으로 RunPod에 GPU Pod를 만들고 시간당 요금이 청구됩니다.")
@@ -163,7 +158,7 @@ struct PowerView: View {
                 titleVisibility: .visible,
                 presenting: pendingOff
             ) { name in
-                Button("'\(name)' 종료", role: .destructive) { powerOff(name) }
+                Button("'\(name)' 종료", role: .destructive) { monitor.powerOff(name) }
                 Button("취소", role: .cancel) {}
             } message: { name in
                 Text("'\(name)' Pod와 그 안의 컨테이너가 영구 삭제됩니다.")
@@ -173,44 +168,22 @@ struct PowerView: View {
 
     // MARK: - Rows
 
-    /// Saved YAML names plus running pods without a YAML, minus protected names.
-    private var visibleNames: [String] {
-        var names = appState.savedPodNames
-        for name in runtimes.keys.sorted() where !names.contains(name) {
-            names.append(name)
-        }
-        names.removeAll { appState.isProtected($0) }
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return q.isEmpty ? names : names.filter { $0.lowercased().contains(q) }
-    }
+    private var visibleNames: [String] { monitor.visibleNames(query: query) }
 
     private var lastCheckedText: String {
-        guard let date = lastChecked else { return "확인 전" }
+        guard let date = monitor.lastChecked else { return "확인 전" }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm:ss"
         return "마지막 확인 \(fmt.string(from: date))"
     }
 
-    private func state(of name: String) -> PowerState {
-        if let label = busy[name] { return .busy(label) }
-        if listError != nil && lastChecked == nil { return .unknown }
-        guard lastChecked != nil else { return .checking }
-        guard let rt = runtimes[name] else { return .off }
-        if rt.healthy { return .ready }
-        return .starting(rt.state)
-    }
-
     @ViewBuilder
     private func podRow(_ name: String) -> some View {
-        let st = state(of: name)
-        let rt = runtimes[name]
+        let st = monitor.state(of: name)
+        let rt = monitor.runtimes[name]
         let hasYaml = appState.savedPodNames.contains(name)
-        let isBusy = busy[name] != nil
-        let canOn: Bool = {
-            if case .off = st { return hasYaml && appState.runpodKeyStatus == "저장됨" }
-            return false
-        }()
-        let canOff = rt != nil && !isBusy
+        let canOn = monitor.canPowerOn(name)
+        let canOff = monitor.canPowerOff(name)
 
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -246,8 +219,8 @@ struct PowerView: View {
                                     if let key = SecretStore.loadKeyForChildProcess(account: SecretStore.modelApiAccount) {
                                         NSPasteboard.general.clearContents()
                                         NSPasteboard.general.setString(key, forType: .string)
-                                        statusMessage = "모델 API 키를 클립보드에 복사했습니다."
-                                        isError = false
+                                        monitor.statusMessage = "모델 API 키를 클립보드에 복사했습니다."
+                                        monitor.isError = false
                                     }
                                 } label: {
                                     Label("API 키", systemImage: "key")
@@ -314,84 +287,5 @@ struct PowerView: View {
         .padding(8)
         .background(Color.orange.opacity(0.1))
         .cornerRadius(8)
-    }
-
-    // MARK: - Commands
-
-    private func gpuUpCommand(_ tail: [String]) -> (URL, [String]) {
-        var args: [String] = appState.isGpuUpDirectExecutable ? [] : ["-m", "podrouter"]
-        args.append(contentsOf: tail)
-        return (URL(fileURLWithPath: appState.gpuUpCLIPath), args)
-    }
-
-    private func refreshStatus() {
-        guard !isChecking, appState.runpodKeyStatus == "저장됨" else { return }
-        let (exec, args) = gpuUpCommand(["ls", "--json", "--api-key", "${RUNPOD_API_KEY}"])
-        let repo = URL(fileURLWithPath: appState.dataRootPath)
-        isChecking = true
-        DispatchQueue.global(qos: .utility).async {
-            let result = ProcessRunner.run(executableURL: exec, arguments: args, currentDirectoryURL: repo, includeKeys: true)
-            var decoded: [PodRuntime]?
-            if result.isSuccess,
-               let line = result.combinedOutput.split(separator: "\n").first(where: { $0.hasPrefix("{") }) {
-                decoded = (try? JSONDecoder().decode(PodListPayload.self, from: Data(line.utf8)))?.pods
-            }
-            DispatchQueue.main.async {
-                isChecking = false
-                if let pods = decoded {
-                    var map: [String: PodRuntime] = [:]
-                    for pod in pods { map[pod.name] = pod }
-                    runtimes = map
-                    lastChecked = Date()
-                    listError = nil
-                } else {
-                    let text = result.combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    listError = text.isEmpty ? "종료 코드 \(result.exitCode)" : String(text.suffix(300))
-                }
-            }
-        }
-    }
-
-    private func powerOn(_ name: String) {
-        guard !appState.isProtected(name) else { return }
-        let yaml = appState.yamlURL(forPodNamed: name).path
-        let (exec, args) = gpuUpCommand(["up", yaml, "--wait", "false", "--api-key", "${RUNPOD_API_KEY}"])
-        run(name: name, label: "켜는 중", exec: exec, args: args,
-            ok: "'\(name)' 켜기 요청 완료. 모델 로딩이 끝나면 '켜짐 · 정상'으로 바뀝니다.",
-            fail: "'\(name)' 켜기 실패")
-    }
-
-    private func powerOff(_ name: String) {
-        guard !appState.isProtected(name) else { return }
-        // Never pass --all.
-        let (exec, args) = gpuUpCommand(["down", name, "--api-key", "${RUNPOD_API_KEY}"])
-        run(name: name, label: "끄는 중", exec: exec, args: args,
-            ok: "'\(name)' 종료 완료.", fail: "'\(name)' 끄기 실패")
-    }
-
-    private func run(name: String, label: String, exec: URL, args: [String], ok: String, fail: String) {
-        let action = args.contains("up") ? "start" : "stop"
-        let repo = URL(fileURLWithPath: appState.dataRootPath)
-        busy[name] = label
-        statusMessage = "'\(name)' \(label)..."
-        isError = false
-        outputLog = ""
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = ProcessRunner.run(executableURL: exec, arguments: args, currentDirectoryURL: repo, includeKeys: true)
-            DispatchQueue.main.async {
-                busy[name] = nil
-                outputLog = result.combinedOutput
-                ActivityLog.append(
-                    action: action,
-                    pod: name,
-                    ok: result.isSuccess,
-                    message: result.isSuccess ? ok : "\(fail) (종료 코드: \(result.exitCode))",
-                    detail: result.combinedOutput
-                )
-                statusMessage = result.isSuccess ? ok : "\(fail) (종료 코드: \(result.exitCode))"
-                isError = !result.isSuccess
-                refreshStatus()
-            }
-        }
     }
 }
