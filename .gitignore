@@ -19,3 +19,4 @@ build/
 .podrouter-stock-poll.py
 .podrouter-web/
 /.podrouter/
+.archify/
