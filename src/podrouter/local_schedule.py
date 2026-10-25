@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -23,6 +24,7 @@ from podrouter.planner import _NAME_REGEX
 from podrouter.pods import NAME, is_live, is_managed, parse_env
 from podrouter.protect import ENV_NAME as PROTECTED_ENV
 from podrouter.protect import is_protected
+from podrouter.provision import NO_SEAT_EXIT
 from podrouter.redact import Redactor
 
 DEFAULT_SCHEDULE_PATH = (
@@ -35,6 +37,8 @@ DEFAULT_WRAPPER_PATH = (
     Path.home() / "Library" / "Application Support" / "podrouter" / "tick.zsh"
 )
 LAUNCH_LABEL = "io.github.hrunj1230.podrouter"
+# launchd runs one tick this often. A pod with no GPU seat is retried every tick.
+TICK_INTERVAL_SEC = 15
 DEFAULT_PLIST_PATH = (
     Path.home() / "Library" / "LaunchAgents" / "io.github.hrunj1230.podrouter.plist"
 )
@@ -280,7 +284,7 @@ def generate_plist(wrapper_path: Path) -> str:
         "Label": LAUNCH_LABEL,
         "ProgramArguments": ["/bin/zsh", str(wrapper_path.expanduser().resolve())],
         "RunAtLoad": False,
-        "StartInterval": 60,
+        "StartInterval": TICK_INTERVAL_SEC,
     }
     return plistlib.dumps(data, fmt=plistlib.FMT_XML).decode("utf-8")
 
@@ -361,8 +365,15 @@ def tick(
     repo_path: str | Path | None = None,
     runner: Callable[..., Any] | None = None,
     live_pods_provider: Callable[[str], tuple[set[str], bool]] | None = None,
+    notifier: Callable[[str, str], None] | None = None,
 ) -> int:
-    """Run one schedule tick protected by an exclusive flock on the state directory."""
+    """Run one schedule tick protected by an exclusive flock on the state directory.
+
+    `notifier(title, message)` shows a desktop notification. It is called once
+    when a start first finds no GPU seat, once when the start succeeds, and once
+    when the window ends while still waiting for a seat.
+    """
+    notify = notifier or (lambda title, message: None)
     sched_p = Path(schedule_path or DEFAULT_SCHEDULE_PATH).expanduser()
     state_p = Path(state_path or DEFAULT_STATE_PATH).expanduser()
     # Logs sit next to the state file, so tests with tmp state never touch ~/Library.
@@ -502,6 +513,19 @@ def tick(
                         detail=redactor.text(last_err),
                         now=current_time,
                     )
+                if prev.get("seat_waiting") and list_ok and name not in live_names:
+                    tries = int(prev.get("seat_attempts") or 0)
+                    message = f"시간대가 끝날 때까지 GPU 자리를 찾지 못했습니다 ({tries}번 시도)."
+                    append_event(
+                        log_p,
+                        source="timer",
+                        action="start",
+                        pod=name,
+                        ok=False,
+                        message=message,
+                        now=current_time,
+                    )
+                    notify(f"podrouter: '{name}' 켜기 실패", message)
                 # If list failed, keep the previous action; if it worked, nothing to do.
                 pods_state[name] = {
                     "last_action": (prev.get("last_action") or "none") if not list_ok else "none",
@@ -520,6 +544,9 @@ def tick(
                     "false",
                     "--ttl",
                     ttl_until_window_end(current_time, entry["windows"]),
+                    # The timer retries on its own every tick, so `up` tries once.
+                    "--retry",
+                    "false",
                     "--api-key",
                     "${RUNPOD_API_KEY}",
                 ]
@@ -543,20 +570,46 @@ def tick(
                 redactor.stderr(redacted_err.strip())
 
             verb = "켜기" if action == "start" else "끄기"
-            append_event(
-                log_p,
-                source="timer",
-                action=action,
-                pod=name,
-                ok=res.returncode == 0,
-                message=(
-                    f"일정에 따라 {verb} 완료"
-                    if res.returncode == 0
-                    else f"일정에 따른 {verb} 실패 (종료 코드 {res.returncode})"
-                ),
-                detail="\n".join(t for t in (redacted_out.strip(), redacted_err.strip()) if t),
-                now=current_time,
-            )
+            detail = "\n".join(t for t in (redacted_out.strip(), redacted_err.strip()) if t)
+            no_seat = action == "start" and res.returncode == NO_SEAT_EXIT
+            was_waiting = bool(prev.get("seat_waiting"))
+            tries = int(prev.get("seat_attempts") or 0) + 1 if was_waiting else 1
+            if no_seat:
+                # Log and notify only the first miss; later ticks retry quietly.
+                if not was_waiting:
+                    message = (
+                        f"GPU 자리가 없습니다. {TICK_INTERVAL_SEC}초마다 다시 시도합니다."
+                    )
+                    append_event(
+                        log_p,
+                        source="timer",
+                        action=action,
+                        pod=name,
+                        ok=False,
+                        message=message,
+                        detail=detail,
+                        now=current_time,
+                    )
+                    notify(f"podrouter: '{name}' 자리 없음", message)
+            else:
+                if res.returncode == 0:
+                    message = f"일정에 따라 {verb} 완료"
+                    if action == "start" and was_waiting:
+                        message += f" ({tries}번째 시도)"
+                else:
+                    message = f"일정에 따른 {verb} 실패 (종료 코드 {res.returncode})"
+                append_event(
+                    log_p,
+                    source="timer",
+                    action=action,
+                    pod=name,
+                    ok=res.returncode == 0,
+                    message=message,
+                    detail=detail,
+                    now=current_time,
+                )
+                if action == "start" and res.returncode == 0:
+                    notify(f"podrouter: '{name}' 켜짐", message)
             acted.append(action)
             pods_state[name] = {
                 "last_action": action,
@@ -564,6 +617,9 @@ def tick(
                 if res.returncode == 0
                 else (redacted_err.strip() or f"exit code {res.returncode}"),
             }
+            if no_seat:
+                pods_state[name]["seat_waiting"] = True
+                pods_state[name]["seat_attempts"] = tries
             if res.returncode != 0 and rc == 0:
                 rc = res.returncode
 
@@ -574,6 +630,25 @@ def tick(
         except OSError:
             pass
         os.close(dir_fd)
+
+
+def notify_macos(title: str, message: str) -> None:
+    """Show a macOS notification. Failures are ignored."""
+    if sys.platform != "darwin" or os.environ.get("PODROUTER_NO_NOTIFY"):
+        return
+    script = [
+        "-e", "on run argv",
+        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+        "-e", "end run",
+    ]
+    # A missed notification must not break the tick.
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["/usr/bin/osascript", *script, title, message],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
 
 
 def install_schedule(
@@ -666,6 +741,7 @@ def run_schedule_cli(args: argparse.Namespace) -> int:
             state_path=args.state,
             now=args.now,
             api_key_raw=args.api_key,
+            notifier=notify_macos,
         )
     if subcmd == "install":
         return install_schedule(

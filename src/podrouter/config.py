@@ -43,6 +43,8 @@ class Config:
     boot_interval_sec: float
     config_hash: str
     secrets: tuple[str, ...]
+    # Seconds between allocation rounds while every GPU candidate has no seat.
+    allocation_retry_sec: float = 15.0
 
 
 def resolve_api_key(raw: str | None) -> str:
@@ -195,6 +197,9 @@ def _build(raw: dict, config_hash: str, secrets: list[str]) -> Config:
     boot_interval = _positive_number(
         timeouts.get("boot_interval_sec", 2), "timeouts.boot_interval_sec"
     )
+    allocation_retry = _positive_number(
+        timeouts.get("allocation_retry_sec", 15), "timeouts.allocation_retry_sec"
+    )
 
     return Config(
         name=name,
@@ -218,6 +223,7 @@ def _build(raw: dict, config_hash: str, secrets: list[str]) -> Config:
         boot_interval_sec=boot_interval,
         config_hash=config_hash,
         secrets=tuple(secrets),
+        allocation_retry_sec=allocation_retry,
     )
 
 

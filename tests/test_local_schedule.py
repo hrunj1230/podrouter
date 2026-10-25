@@ -317,7 +317,7 @@ def test_flock_skips_when_lock_held(tmp_path: Path) -> None:
         os.close(lock_fd)
 
 
-def test_dry_run_plist_has_startinterval_60_and_no_sample_key(
+def test_dry_run_plist_has_startinterval_15_and_no_sample_key(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     sample_key = "SAMPLE_KEY_SECRET_NOT_ALLOWED"
@@ -328,7 +328,7 @@ def test_dry_run_plist_has_startinterval_60_and_no_sample_key(
     stdout = captured.out
 
     assert "<key>StartInterval</key>" in stdout
-    assert "<integer>60</integer>" in stdout
+    assert "<integer>15</integer>" in stdout
     assert "<key>RunAtLoad</key>" in stdout
     assert "<false/>" in stdout
     assert sample_key not in stdout
@@ -734,3 +734,64 @@ def test_legacy_single_state_carries_over(tmp_path: Path) -> None:
     state = read_state(state_file)
     assert state["last_error"] == "missing RUNPOD_API_KEY"
     assert state["pods"]["qwen38-27b"]["last_action"] == "start"
+
+
+def test_no_seat_retries_quietly_and_notifies_first_miss_and_success(
+    tmp_path: Path,
+) -> None:
+    sched_file = _write_schedule(tmp_path / "schedule.json")
+    state_file = tmp_path / "state.json"
+    notes: list[tuple[str, str]] = []
+    runners: list[FakeRunner] = []
+
+    def run_tick(second: str, returncode: int) -> None:
+        runner = FakeRunner(returncode=returncode, stderr="stage=skip reason=stock")
+        runners.append(runner)
+        tick(
+            schedule_path=sched_file,
+            state_path=state_file,
+            now=f"2026-10-26T10:00:{second}",
+            api_key_raw="test-key-1234",
+            runner=runner,
+            live_pods_provider=lambda _k: (set(), True),
+            notifier=lambda title, message: notes.append((title, message)),
+        )
+
+    run_tick("00", 3)
+    run_tick("15", 3)
+    run_tick("30", 3)
+    assert all("--retry" in r.calls[0]["argv"] for r in runners)
+    assert len(notes) == 1
+    assert "자리 없음" in notes[0][0]
+    assert len(_read_log(tmp_path)) == 1
+    pod_state = read_state(state_file)["pods"]["qwen38-27b"]
+    assert pod_state["seat_waiting"] is True
+    assert pod_state["seat_attempts"] == 3
+
+    run_tick("45", 0)
+    assert len(notes) == 2
+    assert "켜짐" in notes[1][0]
+    assert "4번째 시도" in notes[1][1]
+    events = _read_log(tmp_path)
+    assert len(events) == 2
+    assert events[-1]["ok"] is True
+    assert "seat_waiting" not in read_state(state_file)["pods"]["qwen38-27b"]
+
+
+def test_window_end_while_waiting_for_seat_notifies(tmp_path: Path) -> None:
+    sched_file = _write_schedule(tmp_path / "schedule.json")
+    state_file = tmp_path / "state.json"
+    notes: list[tuple[str, str]] = []
+    for now, code in (("2026-10-26T17:59:50", 3), ("2026-10-26T18:00:05", 3)):
+        tick(
+            schedule_path=sched_file,
+            state_path=state_file,
+            now=now,
+            api_key_raw="test-key-1234",
+            runner=FakeRunner(returncode=code),
+            live_pods_provider=lambda _k: (set(), True),
+            notifier=lambda title, message: notes.append((title, message)),
+        )
+    assert len(notes) == 2
+    assert "켜기 실패" in notes[1][0]
+    assert "seat_waiting" not in read_state(state_file)["pods"]["qwen38-27b"]

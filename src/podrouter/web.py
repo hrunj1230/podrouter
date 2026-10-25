@@ -321,6 +321,8 @@ def _execute_once(spec: dict) -> dict:
                 "up",
                 str(path),
                 f"--wait={wait}",
+                # The web job runs its own retry loop.
+                "--retry=false",
                 "--api-key",
                 "${RUNPOD_API_KEY}",
             ],

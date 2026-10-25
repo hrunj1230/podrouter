@@ -10,6 +10,7 @@ import select
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -147,8 +148,8 @@ def test_all_candidates_fail_and_leave_no_pod(tmp_path: Path) -> None:
         stub.gpus["NVIDIA GeForce RTX 4090"]["stock"] = False
         stub.gpus["NVIDIA RTX A6000"]["stock"] = False
         cfg = write_config(tmp_path)
-        proc = run(stub, up_cmd(cfg))
-        assert proc.returncode != 0
+        proc = run(stub, [*up_cmd(cfg), "--retry=false"])
+        assert proc.returncode == 3
         assert stub.live_managed_ids() == []
         assert "proxy.runpod.net" not in proc.stdout
         assert stub.unrelated_id not in stub.terminates
@@ -637,6 +638,49 @@ def test_allocation_timeout_is_independent_of_boot_and_warmup(tmp_path: Path) ->
         assert proc.returncode != 0
         assert stub.all_creates() == []
         assert "allocation timed out" in proc.stderr
+
+
+def test_no_seat_retries_until_a_seat_opens(tmp_path: Path) -> None:
+    with StubServer() as stub:
+        stub.gpus["NVIDIA GeForce RTX 4090"]["stock"] = False
+        stub.gpus["NVIDIA RTX A6000"]["stock"] = False
+        cfg = write_config(
+            tmp_path,
+            lambda data: data["timeouts"].update(
+                {"allocation_sec": 10, "allocation_retry_sec": 0.3}
+            ),
+        )
+
+        def open_seat() -> None:
+            stub.gpus["NVIDIA RTX A6000"]["stock"] = True
+
+        timer = threading.Timer(1.0, open_seat)
+        timer.start()
+        try:
+            proc = run(stub, [*up_cmd(cfg), "--wait=false"])
+        finally:
+            timer.cancel()
+        assert proc.returncode == 0, proc.stderr
+        assert "stage=wait" in proc.stderr
+        assert "reason=no-seat" in proc.stderr
+        assert stub.accepted_creates()[0]["gpu_type_id"] == "NVIDIA RTX A6000"
+
+
+def test_no_seat_gives_up_after_allocation_sec(tmp_path: Path) -> None:
+    with StubServer() as stub:
+        stub.gpus["NVIDIA GeForce RTX 4090"]["stock"] = False
+        stub.gpus["NVIDIA RTX A6000"]["stock"] = False
+        cfg = write_config(
+            tmp_path,
+            lambda data: data["timeouts"].update(
+                {"allocation_sec": 1, "allocation_retry_sec": 0.2}
+            ),
+        )
+        proc = run(stub, [*up_cmd(cfg), "--wait=false"])
+        assert proc.returncode == 3
+        assert proc.stderr.count("stage=wait") >= 2
+        assert "no GPU seat within allocation_sec=1" in proc.stderr
+        assert stub.accepted_creates() == []
 
 
 def write_config(directory: Path, mutate=None, name: str = "serve.yaml") -> Path:

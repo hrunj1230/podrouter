@@ -81,8 +81,9 @@ def _up(args: argparse.Namespace, api_key: str) -> int:
         )
     log = Redactor(_secret_values(api_key, cfg.secrets))
     wait = _parse_wait(args.wait)
+    retry = _parse_bool(args.retry, "--retry")
     client = _client(api_key)
-    return bring_up(cfg, client, wait=wait, log=log)
+    return bring_up(cfg, client, wait=wait, log=log, retry=retry)
 
 
 def _secret_values(
@@ -102,12 +103,16 @@ def _client(api_key: str) -> RunPodClient:
 
 
 def _parse_wait(raw: str) -> bool:
+    return _parse_bool(raw, "--wait")
+
+
+def _parse_bool(raw: str, flag: str) -> bool:
     text = str(raw).strip().lower()
     if text in {"1", "true", "yes", "y"}:
         return True
     if text in {"0", "false", "no", "n"}:
         return False
-    raise ConfigError("--wait must be true or false")
+    raise ConfigError(f"{flag} must be true or false")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -123,6 +128,14 @@ def _parser() -> argparse.ArgumentParser:
         "--wait",
         default="true",
         help="Wait until the readiness path returns HTTP 200 (true or false)",
+    )
+    up.add_argument(
+        "--retry",
+        default="true",
+        help=(
+            "When no GPU has a seat, try again every timeouts.allocation_retry_sec"
+            " until timeouts.allocation_sec runs out (true or false)"
+        ),
     )
     up.add_argument("--ttl", help="Override lifecycle.ttl for this launch, e.g. 9h15m")
     _add_api_key(up)

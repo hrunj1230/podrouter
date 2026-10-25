@@ -101,7 +101,7 @@ struct TimerView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Text("일정에서 Pod를 빼도 이미 켜져 있는 Pod는 꺼지지 않습니다. 전원 화면에서 끄세요. 타이머는 1분마다 이 파일을 다시 읽으므로, 한 번 설치한 뒤에는 저장만 해도 바로 적용됩니다.")
+                Text("일정에서 Pod를 빼도 이미 켜져 있는 Pod는 꺼지지 않습니다. 전원 화면에서 끄세요. 타이머는 15초마다 이 파일을 다시 읽으므로, 한 번 설치한 뒤에는 저장만 해도 바로 적용됩니다.")
                     .font(.caption)
                     .foregroundColor(.secondary)
 

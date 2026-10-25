@@ -57,7 +57,19 @@ class _Session:
         self.interrupted = False
 
 
-def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) -> int:
+# Exit code of `up` when no GPU seat was found. The timer uses it to tell
+# "no seat, try again" from other failures.
+NO_SEAT_EXIT = 3
+
+
+def bring_up(
+    cfg: Config,
+    client: RunPodClient,
+    *,
+    wait: bool,
+    log: Redactor,
+    retry: bool = True,
+) -> int:
     """Run `up`. A successful return does not terminate the pod."""
     if is_protected(cfg.name):
         log.stderr(f"error: {cfg.name} is protected ({PROTECTED_ENV})")
@@ -92,7 +104,9 @@ def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) ->
                 hourly_price=_price_text(session.price),
             )
         else:
-            pod_id, gpu, price = _allocate(cfg, client, log, started, tunnel)
+            pod_id, gpu, price = _allocate(
+                cfg, client, log, started, tunnel, retry=retry
+            )
             session.pod_id = pod_id
             session.gpu = gpu
             session.price = price
@@ -116,6 +130,10 @@ def bring_up(cfg: Config, client: RunPodClient, *, wait: bool, log: Redactor) ->
         session.interrupted = True
         log.stderr("error: interrupted")
         exit_code = 130
+        return exit_code
+    except AllocationError as exc:
+        log.stderr(f"error: {exc}")
+        exit_code = NO_SEAT_EXIT
         return exit_code
     except Exception as exc:  # noqa: BLE001 — unknown SDK failures must still tear the pod down
         log.stderr(f"error: {exc}")
@@ -264,14 +282,61 @@ def shut_down(
 
 
 def _allocate(
-    cfg: Config, client: RunPodClient, log: Redactor, started: float, tunnel: Tunnel
+    cfg: Config,
+    client: RunPodClient,
+    log: Redactor,
+    started: float,
+    tunnel: Tunnel,
+    *,
+    retry: bool = True,
 ) -> tuple[str, str, float]:
+    """Try every GPU candidate. With `retry`, repeat the round until a seat is
+    found or `timeouts.allocation_sec` runs out."""
     deadline = time.monotonic() + cfg.allocation_timeout_sec
-    last_error = "no GPU candidate could be allocated"
+    round_no = 1
+    while True:
+        found, timed_out = _allocate_round(cfg, client, log, started, tunnel, deadline)
+        if found is not None:
+            return found
+        remaining = deadline - time.monotonic()
+        if timed_out or remaining <= 0:
+            if round_no > 1:
+                raise AllocationError(
+                    f"no GPU seat within allocation_sec={cfg.allocation_timeout_sec:g}"
+                    f" ({round_no} rounds)"
+                )
+            raise AllocationError("allocation timed out" if timed_out else _NO_SEAT)
+        if not retry:
+            raise AllocationError(_NO_SEAT)
+        pause = min(cfg.allocation_retry_sec, remaining)
+        _stage(
+            log,
+            "wait",
+            started,
+            round=round_no,
+            retry_in_sec=format(pause, ".0f"),
+            remaining_sec=format(remaining, ".0f"),
+            reason="no-seat",
+        )
+        time.sleep(pause)
+        round_no += 1
+
+
+_NO_SEAT = "no GPU candidate could be allocated"
+
+
+def _allocate_round(
+    cfg: Config,
+    client: RunPodClient,
+    log: Redactor,
+    started: float,
+    tunnel: Tunnel,
+    deadline: float,
+) -> tuple[tuple[str, str, float] | None, bool]:
+    """One pass over the candidates. Returns (result, timed_out)."""
     for gpu in cfg.candidates:
         if time.monotonic() > deadline:
-            last_error = "allocation timed out"
-            break
+            return None, True
         try:
             price = client.hourly_price(gpu, cfg.cloud, cfg.gpu_count)
         except Exception as exc:
@@ -280,8 +345,7 @@ def _allocate(
                 continue
             raise
         if time.monotonic() > deadline:
-            last_error = "allocation timed out"
-            break
+            return None, True
         if price is None or not isinstance(price, (int, float)):
             _stage(
                 log,
@@ -329,8 +393,8 @@ def _allocate(
             gpu=gpu,
             hourly_price=_price_text(price),
         )
-        return pod_id, gpu, price
-    raise AllocationError(last_error)
+        return (pod_id, gpu, price), False
+    return None, False
 
 
 def _active_hash(cfg: Config, tunnel: Tunnel) -> str:
