@@ -2,7 +2,7 @@
 name: podrouter-setup
 description: >
   podrouter Mac 앱 설정에 필요한 Runpod API 키 및 Tailscale 인증 키(Auth Key) 발급 클릭 경로를 안내합니다.
-  사용자가 /podrouter-setup 명령을 실행하거나 Runpod 또는 Tailscale 키 발급 방법을 물어볼 때 사용합니다.
+  사용자가 /podrouter-setup(Codex에서는 $podrouter-setup)을 실행하거나 Runpod 또는 Tailscale 키 발급 방법을 물어볼 때 사용합니다.
 ---
 
 # podrouter 키 설정 안내
@@ -13,7 +13,7 @@ description: >
 
 1. **키 입력 위치 및 채팅 입력 금지**:
    - 발급받은 키는 반드시 podrouter Mac 앱의 보안 입력 필드(SecureField)에 직접 붙여넣어야 합니다.
-   - Claude와의 대화창(트랜스크립트)에는 절대로 키를 붙여넣지 마십시오.
+   - Claude나 Codex의 대화창(트랜스크립트)에는 절대로 키를 붙여넣지 마십시오.
 2. **키 유출 시 즉시 폐기**:
    - 만약 메시지나 대화에 이미 키 값이 포함되어 노출된 경우, 즉시 해당 콘솔에서 키를 폐기(Revoke)하도록 사용자에게 안내하십시오.
    - 노출된 키 값을 절대로 대화창에 반복하거나 출력하지 마십시오.

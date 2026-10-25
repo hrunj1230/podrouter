@@ -65,7 +65,11 @@ enum PythonSetup {
         return nil
     }
 
-    /// `~/podrouter/.claude/skills/podrouter-*` and `settings.json` from the bundle.
+    /// Skills also installed for Codex under `~/podrouter/.agents/skills`.
+    static let codexSkills = ["podrouter-setup"]
+
+    /// `~/podrouter/.claude/skills/podrouter-*` and `settings.json` from the bundle,
+    /// plus `codexSkills` under `.agents/skills`.
     /// Our two skills are replaced on every launch so they match the app version.
     private static func copyClaudeFiles(_ runtime: Runtime) {
         guard let template = runtime.claudeTemplate else { return }
@@ -78,6 +82,16 @@ enum PythonSetup {
             let dest = skills.appendingPathComponent(name)
             try? fm.removeItem(at: dest)
             try? fm.copyItem(at: sourceSkills.appendingPathComponent(name), to: dest)
+        }
+        // Codex reads skills from `.agents/skills` in the folder it starts in.
+        let agentSkills = runtime.dataRoot.appendingPathComponent(".agents/skills")
+        try? fm.createDirectory(at: agentSkills, withIntermediateDirectories: true)
+        for name in codexSkills {
+            let source = sourceSkills.appendingPathComponent(name)
+            guard fm.fileExists(atPath: source.path) else { continue }
+            let dest = agentSkills.appendingPathComponent(name)
+            try? fm.removeItem(at: dest)
+            try? fm.copyItem(at: source, to: dest)
         }
         let settings = target.appendingPathComponent("settings.json")
         if !fm.fileExists(atPath: settings.path) {

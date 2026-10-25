@@ -122,18 +122,29 @@ public enum ProcessRunner {
     /// Opens Terminal.app at repo and launches claude with sensitive keys unset.
     /// `initialPrompt` must be a fixed slash command such as `/podrouter-pod` (no quotes).
     public static func openClaudeInTerminal(folder repoPath: String, initialPrompt: String? = nil) -> ProcessResult {
+        openAgentInTerminal(folder: repoPath, agent: "claude", initialPrompt: initialPrompt)
+    }
+
+    /// Opens Terminal.app at repo and launches codex with sensitive keys unset.
+    /// `initialPrompt` must be a fixed skill mention such as `$podrouter-setup`.
+    public static func openCodexInTerminal(folder repoPath: String, initialPrompt: String? = nil) -> ProcessResult {
+        openAgentInTerminal(folder: repoPath, agent: "codex", initialPrompt: initialPrompt)
+    }
+
+    private static func openAgentInTerminal(folder repoPath: String, agent: String, initialPrompt: String?) -> ProcessResult {
         let escapedRepo = repoPath
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        var claudeCommand = "claude"
-        if let prompt = initialPrompt, prompt.range(of: "^/[a-z0-9-]+$", options: .regularExpression) != nil {
-            claudeCommand = "claude '\(prompt)'"
+        var agentCommand = agent
+        // Only a fixed `/name` or `$name` is passed, single-quoted so the shell keeps `$`.
+        if let prompt = initialPrompt, prompt.range(of: "^[/$][a-z0-9-]+$", options: .regularExpression) != nil {
+            agentCommand = "\(agent) '\(prompt)'"
         }
 
         let appleScript = """
         tell application "Terminal"
             activate
-            do script "cd \\"\(escapedRepo)\\" && env -u RUNPOD_API_KEY -u TS_AUTHKEY -u CF_TUNNEL_TOKEN -u HF_TOKEN -u VLLM_API_KEY -u CLOUDFLARE_API_TOKEN \(claudeCommand)"
+            do script "cd \\"\(escapedRepo)\\" && env -u RUNPOD_API_KEY -u TS_AUTHKEY -u CF_TUNNEL_TOKEN -u HF_TOKEN -u VLLM_API_KEY -u CLOUDFLARE_API_TOKEN \(agentCommand)"
         end tell
         """
 
