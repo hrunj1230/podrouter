@@ -65,7 +65,51 @@ curl https://<호출 주소>/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"안녕"}]}'
 ```
 
+### Pod가 켜지는 순서
+
+```mermaid
+sequenceDiagram
+    participant App as podrouter 앱
+    participant CLI as podrouter 명령
+    participant API as Runpod API
+    participant Pod as Pod
+    participant TS as Tailscale
+    participant HF as Hugging Face
+
+    Note over App,API: Pod 만들기
+    App->>CLI: up --wait false
+    CLI->>API: 같은 이름·설정의 Pod 조회
+    API-->>CLI: 없음 (있으면 그 Pod 재사용)
+    CLI->>API: GPU 후보로 생성 요청
+    API-->>CLI: pod_id · 주소
+    CLI-->>App: 켜기 요청 완료
+
+    Note over Pod,HF: Pod 안에서 준비
+    Pod->>TS: Pod 이름으로 등록 · Funnel 열기
+    Pod->>HF: GGUF 모델 받기
+    HF-->>Pod: 모델 파일 → llama-server 시작
+
+    Note over App,Pod: 상태 확인 (15초마다)
+    App->>CLI: ls --json
+    CLI->>Pod: GET /health
+    Pod-->>CLI: 200
+    CLI-->>App: 켜짐 · 정상
+```
+
 ### GPU 자리가 없을 때
+
+```mermaid
+flowchart TD
+    A[켜기 요청] --> B{같은 Pod 이미 켜짐?}
+    B -- 예 --> R[그 Pod 재사용]
+    B -- 아니오 --> C[GPU 후보를 위에서부터 시도]
+    C --> D{자리 있는 후보?}
+    D -- 예 --> E[Pod 생성]
+    D -- 모두 없음 --> F{재시도 중이고 시간 남음?}
+    F -- 예 --> W[15초 쉬기] --> C
+    F -- 아니오 --> X[실패: 종료 코드 3]
+    X -. 타이머는 15초 뒤 다시 요청 .-> A
+```
 
 - **전원 제어의 켜기 버튼**: 모든 GPU 후보에 자리가 없으면 15초(`timeouts.allocation_retry_sec`) 쉬고 다시 시도합니다. YAML의 `timeouts.allocation_sec` 동안 반복하고, 그때까지 자리가 없으면 실패로 끝납니다. 오래 기다리게 하려면 이 값을 늘립니다(예: `3600`이면 1시간).
 - **타이머**: 15초마다 실행될 때 시간대 안인데 Pod가 없으면 켜기를 다시 시도합니다. 처음 자리가 없을 때, 켜졌을 때(몇 번째 시도인지 포함), 자리를 못 찾고 시간대가 끝났을 때 macOS 알림을 한 번씩 보냅니다. 로그에는 첫 실패만 남깁니다.
