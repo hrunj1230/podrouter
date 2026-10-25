@@ -48,7 +48,11 @@ _RESPONSE_FORMAT = {
                 "gpu_id": {"type": "string"},
                 "cloud": {"type": "string", "enum": ["SECURE", "COMMUNITY"]},
                 "model": {"type": "string"},
-                "context_tokens": {"type": "integer", "minimum": 2048, "maximum": 262144},
+                "context_tokens": {
+                    "type": "integer",
+                    "minimum": 2048,
+                    "maximum": 262144,
+                },
                 "reason": {"type": "string"},
             },
             "required": ["gpu_id", "cloud", "model", "context_tokens", "reason"],
@@ -87,7 +91,9 @@ def compact_catalog_rows(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def validate_plan_input(name: str, wish: str) -> str:
     """Validate Pod name and wish text before catalog or LLM calls."""
     if not isinstance(name, str) or _NAME_REGEX.fullmatch(name) is None:
-        raise ConfigError("Pod 이름은 영문, 숫자, 하이픈으로 구성된 1~41자여야 하며 하이픈으로 끝날 수 없습니다.")
+        raise ConfigError(
+            "Pod 이름은 영문, 숫자, 하이픈으로 구성된 1~41자여야 하며 하이픈으로 끝날 수 없습니다."
+        )
     if not isinstance(wish, str):
         raise ConfigError("용도는 문자열이어야 합니다.")
     if len(wish) > 400:
@@ -99,12 +105,9 @@ def validate_plan_input(name: str, wish: str) -> str:
 
 
 def _redact_text(text: str, api_key: str = "") -> str:
-    try:
-        from podrouter.web import _secrets
+    from podrouter.envfile import secret_values
 
-        secrets = _secrets()
-    except (ImportError, AttributeError):
-        secrets = []
+    secrets = secret_values()
     if api_key and api_key not in secrets:
         secrets.append(api_key)
     secrets.sort(key=len, reverse=True)
@@ -140,7 +143,8 @@ def plan_pod(
     catalog: list[dict[str, Any]],
     *,
     api_key: str,
-    post: Callable[[str, dict[str, str], dict[str, Any], float], tuple[int, bytes]] | None = None,
+    post: Callable[[str, dict[str, str], dict[str, Any], float], tuple[int, bytes]]
+    | None = None,
 ) -> dict[str, Any]:
     wish_folded = validate_plan_input(name, wish)
 
@@ -186,7 +190,13 @@ def plan_pod(
     try:
         resp_obj = json.loads(body_bytes.decode("utf-8"))
         content = resp_obj["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (
+        KeyError,
+        IndexError,
+        TypeError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exc:
         raise ConfigError("xAI API 응답 형식이 올바르지 않습니다.") from exc
 
     if not isinstance(content, str):
@@ -197,7 +207,9 @@ def plan_pod(
 
     content_trimmed = content.strip()
     if not (content_trimmed.startswith("{") and content_trimmed.endswith("}")):
-        raise ConfigError("모델 응답 앞뒤에 불필요한 설명이 포함되어 있거나 올바른 JSON이 아닙니다.")
+        raise ConfigError(
+            "모델 응답 앞뒤에 불필요한 설명이 포함되어 있거나 올바른 JSON이 아닙니다."
+        )
 
     try:
         parsed = json.loads(content_trimmed)
@@ -271,7 +283,9 @@ def build_plan(
     if not isinstance(model, str) or _MODEL_REGEX.fullmatch(model) is None:
         raise ConfigError(f"유효하지 않은 모델 형식입니다: {model}")
     if any(ch in model for ch in _FORBIDDEN_MODEL_CHARS):
-        raise ConfigError(f"모델 이름에 허용되지 않는 문자가 포함되어 있습니다: {model}")
+        raise ConfigError(
+            f"모델 이름에 허용되지 않는 문자가 포함되어 있습니다: {model}"
+        )
 
     if isinstance(context_tokens, bool) or not isinstance(context_tokens, int):
         raise ConfigError("context_tokens는 정수여야 합니다.")
@@ -370,7 +384,11 @@ def read_plan_fields(text: str) -> dict[str, Any]:
     if not isinstance(gpu, dict):
         raise ConfigError("gpu 항목이 없습니다.")
     candidates = gpu.get("candidates")
-    if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], str):
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or not isinstance(candidates[0], str)
+    ):
         raise ConfigError("gpu.candidates가 비어 있습니다.")
     cloud = gpu.get("cloud", "SECURE")
     if cloud not in ("SECURE", "COMMUNITY"):

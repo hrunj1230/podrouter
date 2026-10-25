@@ -68,4 +68,4 @@ description: >
 - `podrouter up`, `podrouter down`, Pod 생성과 종료.
 - `.env`, `.env.*` 읽기. 키를 직접 꺼내 출력하기. 키 값을 대화에 쓰기.
 - 사용자가 키를 대화에 붙여넣으면 다시 쓰지 말고, 그 키를 폐기하고 앱의 Keys 화면에 새로 넣으라고 안내한다.
-- `examples/a40.yaml`, `docs/pod-lifecycle.html` 덮어쓰기.
+- `examples/a40.yaml` 덮어쓰기.

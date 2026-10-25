@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Stores keys in the data folder `.env` (mode 0600), shared with the web server, timer and CLI.
+/// Stores keys in the data folder `.env` (mode 0600), shared with the timer and CLI.
 /// Values are never shown in the UI; only "저장됨" or "없음".
 public enum SecretStore {
     public static let runpodAccount = "RUNPOD_API_KEY"

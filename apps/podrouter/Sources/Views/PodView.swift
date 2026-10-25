@@ -415,8 +415,7 @@ struct PodView: View {
         let outURL = appState.currentYamlURL
         let resolvedPath = outURL.resolvingSymlinksInPath().path
         if resolvedPath.hasSuffix("/.env") ||
-           resolvedPath.hasSuffix("/examples/a40.yaml") ||
-           resolvedPath.hasSuffix("/docs/pod-lifecycle.html") {
+           resolvedPath.hasSuffix("/examples/a40.yaml") {
             message = "보호된 시스템 파일 경로에는 저장할 수 없습니다."
             isError = true
             return

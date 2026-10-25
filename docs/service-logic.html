@@ -139,11 +139,9 @@
 <header>
   <p class="kicker">podrouter · Runpod Pod</p>
   <h1>설정 하나에서 Pod 하나, 주소 하나.</h1>
-  <p class="lede">로컬 화면이나 CLI가 YAML을 읽고 Runpod에 Pod를 만듭니다. 뜨면 <span class="mono">https://&lt;pod-id&gt;-&lt;포트&gt;.proxy.runpod.net</span> 를 돌려주고, 그 시도가 실패하면 방금 만든 Pod만 지웁니다.</p>
+  <p class="lede">맥 앱, 타이머, CLI가 YAML을 읽고 Runpod에 Pod를 만듭니다. 뜨면 <span class="mono">https://&lt;pod-id&gt;-&lt;포트&gt;.proxy.runpod.net</span> 를 돌려주고, 그 시도가 실패하면 방금 만든 Pod만 지웁니다.</p>
   <nav>
     <a href="#map">전체</a>
-    <a href="#screen">화면의 세 버튼</a>
-    <a href="#job">생성 재시도</a>
     <a href="#up">up 한 번</a>
     <a href="#own">누구를 끄나</a>
     <a href="#limits">한도</a>
@@ -152,97 +150,27 @@
 <main>
   <section id="map">
     <h2>전체 경로</h2>
-    <p class="note">키는 브라우저로 나가지 않습니다. 페이지는 로컬 서버만 부르고, 서버가 <span class="mono">.env</span>의 <span class="mono">RUNPOD_API_KEY</span>로 Runpod GraphQL을 부릅니다.</p>
+    <p class="note">키는 데이터 폴더의 <span class="mono">.env</span>에만 있습니다. 맥 앱과 타이머는 <span class="mono">podrouter</span> CLI를 실행하고, CLI가 <span class="mono">RUNPOD_API_KEY</span>로 Runpod GraphQL을 부릅니다.</p>
     <div class="board">
       <article class="node">
         <div class="n">01</div>
-        <strong>브라우저</strong>
-        <span>127.0.0.1 전용 페이지. 재고 표, 띄우기 폼, 이 도구가 만든 Pod 목록.</span>
+        <strong>맥 앱</strong>
+        <span>전원 화면과 상단바의 켜기·끄기. 15초마다 <span class="mono">podrouter ls --json</span>으로 상태를 봅니다.</span>
       </article>
       <article class="node">
         <div class="n">02</div>
-        <strong>로컬 서버</strong>
-        <span><span class="mono">podrouter web</span>. 다른 주소로 열리면 거절. 생성은 한 번에 하나.</span>
+        <strong>타이머</strong>
+        <span>LaunchAgent가 15초마다 <span class="mono">podrouter schedule tick</span>. 정한 시간대에 Pod가 없으면 켜고, 끝나면 끕니다.</span>
       </article>
       <article class="node">
         <div class="n">03</div>
         <strong>podrouter up / down</strong>
-        <span>서버가 임시 YAML을 쓰고 CLI를 한 번 실행합니다. 끝나면 파일을 지웁니다.</span>
+        <span>저장한 YAML로 한 번 실행합니다. 자리가 없으면 <span class="mono">timeouts.allocation_sec</span> 안에서 다시 시도합니다.</span>
       </article>
       <article class="node">
         <div class="n">04</div>
         <strong>Runpod</strong>
         <span><span class="mono">api.runpod.io/graphql</span>. 생성은 <span class="mono">podFindAndDeployOnDemand</span>.</span>
-      </article>
-    </div>
-  </section>
-
-  <section id="screen">
-    <h2>화면의 세 동작</h2>
-    <p class="note">재고 표의 “자리 있음”은 보여 주기용입니다. 실제 배정은 생성 요청이 결정합니다. 표에 자리가 없어도 생성 버튼은 생성을 시도합니다.</p>
-    <div class="lanes">
-      <article class="lane">
-        <div class="tag look">조회</div>
-        <h3>폴링 시작, 재시도 끔</h3>
-        <ol>
-          <li>15–300초, 기본 60초마다 <span class="mono">GET /api/gpus</span></li>
-          <li>GPU 종류, 가격, 재고만 다시 그립니다</li>
-          <li>1달러 미만이고 자리가 없다가 생기면 배너를 띄웁니다</li>
-          <li>Pod를 만들지 않습니다</li>
-        </ol>
-      </article>
-      <article class="lane">
-        <div class="tag once">한 번</div>
-        <h3>이 설정으로 띄우기</h3>
-        <ol>
-          <li><span class="mono">POST /api/launch</span>, 재시도 없음</li>
-          <li>헬스 체크를 켜면 <span class="mono">/health</span>가 200이 될 때까지 기다립니다</li>
-          <li>끄면 Pod id와 주소만 받고 끝냅니다</li>
-          <li>자리가 없으면 그 요청은 거기서 끝입니다</li>
-        </ol>
-      </article>
-      <article class="lane">
-        <div class="tag retry">반복</div>
-        <h3>재시도 켜고 폴링 시작</h3>
-        <ol>
-          <li>확인창 뒤에 생성 작업을 엽니다</li>
-          <li>헬스 대기는 강제로 꺼집니다</li>
-          <li>간격은 15초 이상 300초 이하, 횟수는 1–240, 기본은 15초와 240번</li>
-          <li>표 갱신은 따로 계속됩니다</li>
-          <li>폴링 멈춤은 <span class="mono">POST /api/cancel</span></li>
-        </ol>
-      </article>
-    </div>
-  </section>
-
-  <section id="job">
-    <h2>생성 작업이 도는 순서</h2>
-    <p class="note">작업은 메모리에만 있습니다. 서버를 끄면 진행 중 표시도 사라집니다. 이미 만들어진 Pod는 서버 프로세스와 별개로 Runpod에 남습니다.</p>
-    <div class="flow">
-      <article class="step">
-        <div class="who">검사</div>
-        <strong>키가 비었거나, 이름·이미지·가격·TTL이 형식에 안 맞으면 400</strong>
-        <p>이름과 GPU id, 이미지에 허용된 글자만. TTL은 <span class="mono">3h</span>, <span class="mono">30m</span>처럼 읽힙니다. 시간당 가격 상한은 생성을 막지 않습니다.</p>
-      </article>
-      <article class="step">
-        <div class="who">잠금</div>
-        <strong>이미 생성이 돌고 있으면 “a launch is already running”</strong>
-        <p>잠금은 성공, 실패, 취소 다음에 풀립니다.</p>
-      </article>
-      <article class="step">
-        <div class="who">시도마다</div>
-        <strong>카탈로그에서 시간당 GPU 가격을 확인한다</strong>
-        <p>가격이 숫자로 확인되면 그 금액으로 생성을 시도합니다. 가격을 모르면 그 GPU는 건너뜁니다. 금액이 크다는 이유만으로 멈추지 않습니다.</p>
-      </article>
-      <article class="step">
-        <div class="who">실행</div>
-        <strong>임시 YAML을 0600으로 쓰고 <span class="mono">podrouter up</span>을 한 번 돌린 뒤 파일을 지움</strong>
-        <p>재시도 경로는 <span class="mono">--wait=false</span>라서, 주소가 나오면 그 Pod를 헬스 실패로 지우지 않습니다. 제한 시간은 대기 없음 180초, 헬스 대기 1200초.</p>
-      </article>
-      <article class="step">
-        <div class="who">갈림</div>
-        <strong>주소가 나오면 성공으로 종료하고 <span class="mono">hourly_price</span>를 같이 돌려준다. 마지막 횟수면 “no seat within the attempt limit”</strong>
-        <p>그 외에는 간격만큼 1초씩 자면서 취소를 확인합니다. 취소 문구는 “취소했습니다”.</p>
       </article>
     </div>
   </section>
@@ -263,7 +191,7 @@
       <article class="step">
         <div class="who">후보</div>
         <strong>GPU 목록을 위에서 아래로 한 번씩</strong>
-        <p>가격 조회가 재고·영구 오류면 다음 GPU. 가격을 숫자로 확인할 수 없으면 다음 GPU. 가격이 있으면 상한과 관계없이 생성을 시도합니다. 생성이 재고 오류거나 id가 없으면 다음 GPU. id가 돌아오면 그 GPU로 확정하고 아래 후보는 보지 않습니다. 결과에는 <span class="mono">hourly_price</span>가 찍힙니다. 화면 폼은 GPU를 하나만 넣습니다.</p>
+        <p>가격 조회가 재고·영구 오류면 다음 GPU. 가격을 숫자로 확인할 수 없으면 다음 GPU. 가격이 있으면 상한과 관계없이 생성을 시도합니다. 생성이 재고 오류거나 id가 없으면 다음 GPU. id가 돌아오면 그 GPU로 확정하고 아래 후보는 보지 않습니다. 결과에는 <span class="mono">hourly_price</span>가 찍힙니다.</p>
       </article>
       <article class="step">
         <div class="who">컨테이너</div>
@@ -287,7 +215,7 @@
 
   <section id="own">
     <h2>끄고 목록에 나오는 범위</h2>
-    <p class="note"><span class="mono">ls</span>, <span class="mono">status</span>, <span class="mono">down</span>, 화면의 Pod 표는 같은 조건을 봅니다. 콘솔에서 직접 만든 Pod는 이 목록에 없고, 끄기에도 걸리지 않습니다.</p>
+    <p class="note"><span class="mono">ls</span>, <span class="mono">status</span>, <span class="mono">down</span>, 맥 앱의 Pod 목록은 같은 조건을 봅니다. 콘솔에서 직접 만든 Pod는 이 목록에 없고, 끄기에도 걸리지 않습니다.</p>
     <table>
       <thead>
         <tr><th>명령</th><th>하는 일</th></tr>
@@ -297,7 +225,7 @@
         <tr><td class="mono">status &lt;이름&gt;</td><td>상태, 시간당 가격, 설정 TTL, 남은 TTL. 남은 시간은 0과 TTL 사이</td></tr>
         <tr><td class="mono">down &lt;이름&gt;</td><td>그 이름의 관리 Pod만 종료</td></tr>
         <tr><td class="mono">down --all</td><td>이 도구가 만든 살아있는 Pod 전부 종료</td></tr>
-        <tr><td>화면의 끄기</td><td><span class="mono">down &lt;이름&gt;</span>과 같습니다</td></tr>
+        <tr><td>맥 앱의 끄기</td><td><span class="mono">down &lt;이름&gt;</span>과 같습니다</td></tr>
       </tbody>
     </table>
   </section>
@@ -320,17 +248,17 @@
           <td>id를 받았거나, 후보가 끝났거나, 배정 시간이 지남</td>
         </tr>
         <tr>
-          <td>화면 재시도</td>
-          <td>한 번 up이 주소 없이 끝나면 15초 이상 쉬고 다음 시도</td>
-          <td>성공, 취소, 최대 240회</td>
+          <td>up의 자리 재시도</td>
+          <td>모든 후보가 자리 없음이면 <span class="mono">timeouts.allocation_retry_sec</span>(기본 15초) 쉬고 목록을 처음부터 다시</td>
+          <td>id를 받았거나, <span class="mono">timeouts.allocation_sec</span>이 지남, <span class="mono">--retry false</span>
         </tr>
       </tbody>
     </table>
-    <p class="note" style="margin-top:12px">화면이 Runpod에 보내는 생성은 GraphQL입니다. 이 계정 REST 한도로 확인된 값은 분당 180, 시간당 7200, 하루 86400이고, 초과는 429입니다. 15초마다 한 번이면 분당 4회입니다. GraphQL 숫자 한도는 공개돼 있지 않고, Runpod는 2026-10-27부터 GraphQL 제한을 시작한다고 적었습니다.</p>
+    <p class="note" style="margin-top:12px">podrouter가 Runpod에 보내는 생성은 GraphQL입니다. 이 계정 REST 한도로 확인된 값은 분당 180, 시간당 7200, 하루 86400이고, 초과는 429입니다. 15초마다 한 번이면 분당 4회입니다. GraphQL 숫자 한도는 공개돼 있지 않고, Runpod는 2026-10-27부터 GraphQL 제한을 시작한다고 적었습니다.</p>
   </section>
 </main>
 <footer>
-  기준 코드: src/podrouter/web.py, provision.py, client.py, pods.py, config.py, reaper.py, static/index.html
+  기준 코드: src/podrouter/provision.py, client.py, pods.py, config.py, reaper.py, local_schedule.py
 </footer>
 </body>
 </html>

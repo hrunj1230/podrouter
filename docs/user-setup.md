@@ -2,22 +2,21 @@
 
 사람이 계정, 비밀값, Tailscale 콘솔, 서버 스펙, 호출 코드에서 맞추는 항목만 모았다. 코드가 기본으로 채우는 값과, 넣어 두어도 지금 Pod에는 전달되지 않는 값은 따로 표시한다.
 
-현재 서버 스펙의 기준 파일은 `examples/a40.yaml`이다. 브라우저의 켜기 버튼은 `docs/pod-lifecycle.html`에 같은 값을 넣어 두었다. 둘 중 하나만 바꾸면 서로 다른 서버가 만들어진다.
+현재 서버 스펙의 기준 파일은 `examples/a40.yaml`이다.
 
 비밀값은 이 문서에 적지 않는다. `.env`는 저장소 루트에 있고 권한은 `600`이며 git에 포함되지 않는다.
 
 ## 1. 로컬에서 넣을 비밀값
 
-웹 서버는 기동할 때 `.env`를 한 번 읽는다. 이미 프로세스에 있는 값은 덮어쓰지 않는다. 키를 추가하거나 바꾼 뒤에는 웹 서버를 다시 켜야 한다. `podrouter` CLI는 `.env`를 자동으로 읽지 않으므로, CLI로 켤 때는 같은 값이 셸 환경에 있어야 한다.
+맥 앱과 타이머는 명령을 실행할 때마다 `.env`를 읽는다. 이미 프로세스에 있는 값은 덮어쓰지 않는다. `podrouter` CLI는 `.env`를 자동으로 읽지 않으므로, CLI로 켤 때는 같은 값이 셸 환경에 있어야 한다.
 
 | 이름 | 지금 필요한가 | 넣는 곳 | 하는 일 |
 | --- | --- | --- | --- |
-| `RUNPOD_API_KEY` | 필수 | `.env` | Runpod Pod 조회, 생성, 종료. 없으면 웹의 켜기와 끄기가 거절된다. AI로 YAML 만들기도 이 키로 GPU 카탈로그를 조회한다. |
+| `RUNPOD_API_KEY` | 필수 | `.env` | Runpod Pod 조회, 생성, 종료. 없으면 맥 앱의 켜기와 끄기가 거절된다. Pod 설정 스킬도 이 키로 GPU 카탈로그를 조회한다. |
 | `PODROUTER_TUNNEL` | 선택 | `.env` | 공개 주소 방식. `none`, `tailscale`, `cloudflare` 중 하나다. 맥 앱 Keys 화면의 "공개 주소 방식"에서 고르면 저장된다. 비어 있으면 예전처럼 `TS_AUTHKEY`가 있을 때 Tailscale, 없을 때 `none`이다. 비밀값이 아니다. |
 | `TS_AUTHKEY` | `tailscale` 방식이면 필수 | `.env` | 선택된 방식이 `tailscale`일 때만 Pod 환경변수로 전달되고, Pod 안에서 Tailscale Funnel이 켜진다. |
 | `CF_TUNNEL_TOKEN` | 선택 | `.env` | `cloudflare` 방식에서 값이 있으면 Named Tunnel(고정 주소), 없으면 Quick Tunnel(`https://<임의>.trycloudflare.com`, 켤 때마다 바뀜)이다. Pod 안에서는 `TUNNEL_TOKEN` 환경변수로만 쓰여 명령줄에 나오지 않는다. |
 | `CF_TUNNEL_HOSTNAME` | 선택 | `.env` | Named Tunnel의 공개 주소(예: `llm.example.com`). 표시용이며 비밀값이 아니다. 실제 연결은 Cloudflare 대시보드의 Public Hostname 설정이 정한다. |
-| `XAI_API_KEY` | YAML 초안을 만들 때만 필요 | `.env` | 브라우저로 나가지 않으며 비어 있으면 AI로 YAML 만들기가 거절된다. AI는 공개 GGUF만 고르고 YAML에 HF_TOKEN 을 쓰지 않는다. |
 | `HF_TOKEN` | 선택 | `.env` | 값이 있으면 Pod 환경변수로 전달된다. 모델 다운로드가 권한 오류로 실패하거나 게이트된 모델을 쓸 때 넣는다. |
 
 키는 모두 저장소 `.env` 한 곳에 둔다. podrouter 맥 앱의 Keys 화면에서 저장하면 해당 줄만 바뀌고, 다른 줄은 그대로 남으며, 파일 권한은 0600(나만 읽기)으로 맞춰진다. 맥 타이머는 `schedule tick --env-file <저장소>/.env`로 같은 파일을 읽는다. Claude는 설정상 `.env`를 읽을 수 없다.
@@ -28,7 +27,7 @@
 - Ephemeral: 켜짐. Pod가 사라진 뒤 노드는 Tailscale이 지운다. 이 속성은 키에 붙는 것이고, `tailscale up` 명령의 플래그가 아니다.
 - Tags: 비움. 태그가 있으면 기본 Funnel 허용 대상에서 빠진다.
 - 값 형식: `tskey-auth-`로 시작한다. 따옴표와 앞뒤 공백 없이 한 줄이다.
-- 만료: 만들 때 지정한 일수이며 최대 90일이다. 만료되면 새 키를 `.env`에 넣고 웹 서버를 다시 켠다.
+- 만료: 만들 때 지정한 일수이며 최대 90일이다. 만료되면 맥 앱의 키 관리에서 새 키를 저장한다.
 
 Cloudflare Named Tunnel은 Cloudflare Zero Trust 대시보드의 Networks → Tunnels에서 만든다. Public Hostname의 서비스는 `http://localhost:<YAML의 port>`로 둔다. 설치 명령에 나오는 토큰(`eyJ`로 시작)을 `CF_TUNNEL_TOKEN`으로 저장한다. 도메인이 Cloudflare DNS에 있어야 한다. Cloudflare 프록시는 첫 응답 바이트를 약 100초까지 기다리므로, 긴 답변은 스트리밍으로 받는다.
 
@@ -52,7 +51,7 @@ Cloudflare Named Tunnel은 Cloudflare Zero Trust 대시보드의 Networks → Tu
 
 ## 3. 서버 스펙
 
-아래는 지금 켜기 버튼과 `examples/a40.yaml`의 값이다. 켜기 버튼과 `examples/a40.yaml`은 그 스펙을 유지하고, 일반 웹 폼(`src/podrouter/static/index.html`)은 이름과 GPU와 인자를 비워 두며 AI가 채운다. 이미지 기본값은 `ghcr.io/ggml-org/llama.cpp:server-cuda13`이다.
+아래는 `examples/a40.yaml`의 값이다. 이미지 기본값은 `ghcr.io/ggml-org/llama.cpp:server-cuda13`이다.
 
 | 항목 | 값 | 이유 |
 | --- | --- | --- |
@@ -65,12 +64,12 @@ Cloudflare Named Tunnel은 Cloudflare Zero Trust 대시보드의 Networks → Tu
 | 디스크 | 컨테이너 디스크 60GB | 네트워크 볼륨은 없다. |
 | TTL | `3h` | 이 시간이 지나면 종료를 시도한다. |
 | 준비 확인 | `/health` | 모델 적재 전에는 503이고, 끝나면 200이다. |
-| 켜기 재시도 | 15초 간격, 최대 240번 | 자리가 없으면 그 설정으로 다시 만든다. 전부 비면 약 60분이다. 웹은 이 재시도와 헬스 대기를 같이 켜지 못한다. |
-| 헬스 대기 | 끄기 버튼 경로에서는 `wait: false` | 헬스 실패가 Pod를 지우고 다시 만드는 일을 막는다. |
+| 켜기 재시도 | 15초 간격(`timeouts.allocation_retry_sec`) | 자리가 없으면 `timeouts.allocation_sec` 동안 그 설정으로 다시 만든다. |
+| 헬스 대기 | 맥 앱과 타이머는 `--wait false` | 헬스 실패가 Pod를 지우고 다시 만드는 일을 막는다. |
 
 이름을 바꾸면 호출 주소의 호스트명도 바뀐다. 이미지, 인자, GPU, 디스크, 포트를 바꾸면 설정 해시가 바뀐다. 이전 Pod가 아직 RUNNING이면 켜기만 눌러도 청구되는 Pod가 하나 더 생긴다. 스펙을 바꾼 뒤에는 끄기를 먼저 한다.
 
-`lifecycle.idle_timeout: 30m`은 파일에 있지만 동작에는 쓰이지 않는다. 컨테이너 시작 명령에 넣는 3시간 뒤 `runpodctl remove`는 이 이미지에 `runpodctl`이 없으면 실행되지 않는다. 끌 때는 화면의 끄기 또는 `podrouter down qwen38-27b`를 쓴다.
+`lifecycle.idle_timeout: 30m`은 파일에 있지만 동작에는 쓰이지 않는다. 컨테이너 시작 명령에 넣는 3시간 뒤 `runpodctl remove`는 이 이미지에 `runpodctl`이 없으면 실행되지 않는다. 끌 때는 맥 앱의 끄기 또는 `podrouter down qwen38-27b`를 쓴다.
 
 ## 4. 모델을 호출하는 코드
 
@@ -94,7 +93,7 @@ https://<pod이름>.<tailnet>.ts.net/v1
 
 | 이름 | 상태 |
 | --- | --- |
-| `HF_TOKEN` | 선택이다. `podrouter up`을 실행하는 환경에 값이 있으면 Pod 환경변수 `HF_TOKEN`으로 넘기고, 없으면 넘기지 않는다. 맥 앱, 웹 서버, 타이머 모두 저장소 `.env`에서 읽는다. 로그에서는 가려진다. 지금 가중치는 공개 저장소라 키가 없어도 받는다. |
+| `HF_TOKEN` | 선택이다. `podrouter up`을 실행하는 환경에 값이 있으면 Pod 환경변수 `HF_TOKEN`으로 넘기고, 없으면 넘기지 않는다. 맥 앱과 타이머 모두 데이터 폴더 `.env`에서 읽는다. 로그에서는 가려진다. 지금 가중치는 공개 저장소라 키가 없어도 받는다. |
 | `VLLM_API_KEY` | 예전 vLLM 예시용이다. 지금 llama.cpp 스펙은 읽지 않는다. |
 | `CLOUDFLARE_API_TOKEN` | 사용하지 않는다. `example.com` DNS는 수정하지 않는다. |
 
@@ -108,11 +107,3 @@ https://<pod이름>.<tailnet>.ts.net/v1
 - Runpod 화면의 Deploy Pod. 생성은 이 도구의 켜기만 쓴다.
 - 태그 있는 Tailscale 키.
 - 네트워크 볼륨. 템플릿 저장 경로 `/workspace`에는 아무것도 마운트되어 있지 않다. 볼륨이 필요하면 따로 요청한다.
-
-## 7. 로컬 화면
-
-웹 서버는 `http://127.0.0.1:8765`이다. 켜기와 끄기는 `http://127.0.0.1:8765/lifecycle`에 있다. 서버는 루프백만 연다. 이미 8765가 떠 있으면 두 번째 서버를 켜지 않는다.
-
-자리 없음 알림만 하던 폴러(`.podrouter-stock-poll.py`)는 멈춰 둔다. 켜기 버튼의 재시도와 별개다.
-
-한 번에 생성 작업은 하나만 진행된다. 모델이 받아지는 동안 프록시 `/health`는 502일 수 있다. 가중치가 약 18GB라 받기 시간이 부팅 시간의 대부분이다.

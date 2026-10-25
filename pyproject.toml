@@ -22,8 +22,5 @@ podrouter = "podrouter.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-podrouter = ["static/*.html"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]

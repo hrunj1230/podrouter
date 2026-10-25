@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from podrouter.envfile import load_dotenv
 from podrouter.local_schedule import generate_wrapper
 from podrouter.paths import data_home
-from podrouter.web import load_dotenv
 
 
 def test_data_home_follows_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,7 +20,9 @@ def test_data_home_follows_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert (data_home() / "pyproject.toml").is_file()
 
 
-def test_load_dotenv_reads_data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_dotenv_reads_data_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     (tmp_path / ".env").write_text("PODROUTER_PATHS_TEST=from-home\n")
     monkeypatch.setenv("PODROUTER_HOME", str(tmp_path))
     monkeypatch.delenv("PODROUTER_PATHS_TEST", raising=False)

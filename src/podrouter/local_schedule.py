@@ -498,7 +498,9 @@ def tick(
         for entry in active:
             name = entry["pod_name"]
             prev = pods_state.get(name, {})
-            action = decide(current_time, entry, live_names, list_ok=list_ok, busy=False)
+            action = decide(
+                current_time, entry, live_names, list_ok=list_ok, busy=False
+            )
 
             if action == "none":
                 last_err = f"list failed: {list_err}" if not list_ok else None
@@ -528,7 +530,9 @@ def tick(
                     notify(f"podrouter: '{name}' 켜기 실패", message)
                 # If list failed, keep the previous action; if it worked, nothing to do.
                 pods_state[name] = {
-                    "last_action": (prev.get("last_action") or "none") if not list_ok else "none",
+                    "last_action": (prev.get("last_action") or "none")
+                    if not list_ok
+                    else "none",
                     "last_error": last_err,
                 }
                 continue
@@ -570,16 +574,16 @@ def tick(
                 redactor.stderr(redacted_err.strip())
 
             verb = "켜기" if action == "start" else "끄기"
-            detail = "\n".join(t for t in (redacted_out.strip(), redacted_err.strip()) if t)
+            detail = "\n".join(
+                t for t in (redacted_out.strip(), redacted_err.strip()) if t
+            )
             no_seat = action == "start" and res.returncode == NO_SEAT_EXIT
             was_waiting = bool(prev.get("seat_waiting"))
             tries = int(prev.get("seat_attempts") or 0) + 1 if was_waiting else 1
             if no_seat:
                 # Log and notify only the first miss; later ticks retry quietly.
                 if not was_waiting:
-                    message = (
-                        f"GPU 자리가 없습니다. {TICK_INTERVAL_SEC}초마다 다시 시도합니다."
-                    )
+                    message = f"GPU 자리가 없습니다. {TICK_INTERVAL_SEC}초마다 다시 시도합니다."
                     append_event(
                         log_p,
                         source="timer",
@@ -637,9 +641,12 @@ def notify_macos(title: str, message: str) -> None:
     if sys.platform != "darwin" or os.environ.get("PODROUTER_NO_NOTIFY"):
         return
     script = [
-        "-e", "on run argv",
-        "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-        "-e", "end run",
+        "-e",
+        "on run argv",
+        "-e",
+        "display notification (item 2 of argv) with title (item 1 of argv)",
+        "-e",
+        "end run",
     ]
     # A missed notification must not break the tick.
     with contextlib.suppress(Exception):
@@ -732,7 +739,7 @@ def run_schedule_cli(args: argparse.Namespace) -> int:
     if subcmd == "tick":
         env_file = getattr(args, "env_file", None)
         if env_file:
-            from podrouter.web import load_dotenv
+            from podrouter.envfile import load_dotenv
 
             # Fills only empty variables; values already set win.
             load_dotenv(Path(env_file).expanduser())

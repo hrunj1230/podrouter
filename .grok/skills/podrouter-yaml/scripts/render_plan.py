@@ -11,15 +11,16 @@ import os
 import sys
 from pathlib import Path
 
+from podrouter.catalog import gpu_catalog
+from podrouter.envfile import load_dotenv
+from podrouter.envfile import redact as _redact
 from podrouter.errors import ConfigError
 from podrouter.planner import build_plan, compact_catalog_rows, read_plan_fields
-from podrouter.web import _redact, gpu_catalog, load_dotenv
 
 _REPO = Path(__file__).resolve().parents[4]
 _PROTECTED = {
     _REPO / ".env",
     _REPO / "examples" / "a40.yaml",
-    _REPO / "docs" / "pod-lifecycle.html",
 }
 
 
@@ -116,7 +117,9 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="podrouter YAML from a subscription agent")
+    parser = argparse.ArgumentParser(
+        description="podrouter YAML from a subscription agent"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("catalog", help="print the GPU catalog as JSON")

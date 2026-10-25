@@ -48,10 +48,9 @@ YAML 본문과 검증 문구의 기준은 `src/podrouter/planner.py`의 `_SYSTEM
 
 표준 출력이 YAML이다. 표준 오류의 `hourly_price`를 사용자에게 함께 말한다. 실패 문구는 그대로 전하고, 값을 바꿔 다시 렌더한다.
 
-사용자가 저장 경로를 말한 경우에만 `--out`을 붙인다. `.env`, `examples/a40.yaml`, `docs/pod-lifecycle.html`은 스크립트가 거절한다. 경로가 없으면 답변에 YAML을 보여주고 파일은 쓰지 않는다.
+사용자가 저장 경로를 말한 경우에만 `--out`을 붙인다. `.env`, `examples/a40.yaml`은 스크립트가 거절한다. 경로가 없으면 답변에 YAML을 보여주고 파일은 쓰지 않는다.
 
 ## 하지 않는 일
 
-- Pod 생성, `podrouter up`, `/api/launch`. 사용자가 띄우라고 한 뒤에만 한다.
+- Pod 생성, `podrouter up`. 사용자가 띄우라고 한 뒤에만 한다.
 - `env`, `HF_TOKEN`, `max_price_per_hour`, `idle_timeout`을 YAML에 넣기.
-- 웹의 `/api/plan`을 이 스킬 대신 호출하기. 그 경로는 여전히 `XAI_API_KEY`가 있어야 한다.

@@ -531,7 +531,9 @@ def test_ls_status_down_and_down_all(tmp_path: Path) -> None:
         assert pod_id in listed.stdout
         assert stub.unrelated_id not in listed.stdout
 
-        down = run(stub, ["down", "qwen-7b-serve", "--api-key", "${PODROUTER_TEST_KEY}"])
+        down = run(
+            stub, ["down", "qwen-7b-serve", "--api-key", "${PODROUTER_TEST_KEY}"]
+        )
         assert down.returncode == 0, down.stderr
         assert pod_id in stub.terminates
         assert stub.live_managed_ids() == []
@@ -716,7 +718,13 @@ def up_cmd(cfg: Path, name: str | None = None) -> list[str]:
 def make_env(stub: StubServer, extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("RUNPOD_API_KEY", None)
-    for name in ("TS_AUTHKEY", "PODROUTER_TUNNEL", "CF_TUNNEL_TOKEN", "CF_TUNNEL_HOSTNAME", "MODEL_API_KEY"):
+    for name in (
+        "TS_AUTHKEY",
+        "PODROUTER_TUNNEL",
+        "CF_TUNNEL_TOKEN",
+        "CF_TUNNEL_HOSTNAME",
+        "MODEL_API_KEY",
+    ):
         env.pop(name, None)
     env.update(
         {
@@ -865,65 +873,6 @@ def test_bad_max_price_type_or_negative_raises_config_error(tmp_path: Path) -> N
             proc = run(stub, up_cmd(cfg))
             assert proc.returncode != 0
             assert "gpu.max_price_per_hour" in proc.stderr
-
-
-def test_web_execute_and_job_records_hourly_price(tmp_path: Path) -> None:
-    from podrouter.web import (
-        _JOBS,
-        _JOBS_LOCK,
-        _config_from_body,
-        _execute_once,
-        _update_job,
-    )
-
-    with StubServer() as stub:
-        env = make_env(stub, {"RUNPOD_API_KEY": "test-key"})
-        body = {
-            "name": "qwen-web-test",
-            "gpu_id": "NVIDIA GeForce RTX 4090",
-            "cloud": "SECURE",
-            "image": "vllm/vllm-openai:latest",
-            "port": 8000,
-            "disk_gb": 50,
-            "ttl": "3h",
-            "args": "",
-            "wait": False,
-        }
-        spec = _config_from_body(body)
-        old_env = os.environ.copy()
-        try:
-            os.environ.update(env)
-            result = _execute_once(spec)
-            assert result["ok"] is True
-            assert result["hourly_price"] == 1.5
-            job_id = "testjob12345"
-            with _JOBS_LOCK:
-                _JOBS[job_id] = {
-                    "id": job_id,
-                    "status": "running",
-                    "log": "",
-                    "url": None,
-                    "pod_id": None,
-                    "hourly_price": None,
-                    "exit_code": None,
-                    "name": spec["name"],
-                }
-            _update_job(
-                job_id,
-                status="ok",
-                log=result["log"],
-                url=result["url"],
-                pod_id=result["pod_id"],
-                hourly_price=result["hourly_price"],
-                exit_code=0,
-            )
-            with _JOBS_LOCK:
-                job = _JOBS[job_id]
-                assert job["status"] == "ok"
-                assert job["hourly_price"] == 1.5
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
 
 
 def test_bin_exists() -> None:

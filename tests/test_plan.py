@@ -1,10 +1,8 @@
-"""Unit tests for AI YAML generation contracts in podrouter.planner and podrouter.web."""
+"""Unit tests for AI YAML generation contracts in podrouter.planner."""
 
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +12,6 @@ import yaml
 from podrouter.config import load_config
 from podrouter.errors import ConfigError
 from podrouter.planner import build_plan, plan_pod, read_plan_fields
-from podrouter.web import plan_from_body
 
 CATALOG = [
     {
@@ -62,9 +59,7 @@ VALID_MODEL_JSON = {
 }
 
 TEST_API_KEY = "test-xai-key"
-EXPECTED_ARGS = (
-    "-hf bartowski/Example-7B-GGUF:Q4_K_M --host 0.0.0.0 --port 8080 -c 8192 -ngl 99 --jinja"
-)
+EXPECTED_ARGS = "-hf bartowski/Example-7B-GGUF:Q4_K_M --host 0.0.0.0 --port 8080 -c 8192 -ngl 99 --jinja"
 EXPECTED_IMAGE = "ghcr.io/ggml-org/llama.cpp:server-cuda13"
 
 
@@ -160,7 +155,9 @@ def test_plan_pod_success(tmp_path: Path) -> None:
     schema = json_schema.get("schema", {})
     assert schema.get("additionalProperties") is False
 
-    auth_header = call["headers"].get("Authorization") or call["headers"].get("authorization")
+    auth_header = call["headers"].get("Authorization") or call["headers"].get(
+        "authorization"
+    )
     assert auth_header == f"Bearer {TEST_API_KEY}"
 
     # 3. 비밀 값 노출 방지
@@ -229,7 +226,9 @@ def test_plan_pod_rejects_unknown_gpu_id() -> None:
 
 def test_plan_pod_rejects_unoffered_cloud() -> None:
     # 4090은 community offered가 False
-    bad_model = dict(VALID_MODEL_JSON, gpu_id="NVIDIA GeForce RTX 4090", cloud="COMMUNITY")
+    bad_model = dict(
+        VALID_MODEL_JSON, gpu_id="NVIDIA GeForce RTX 4090", cloud="COMMUNITY"
+    )
     post = PostRecorder((200, make_completions_body(bad_model)))
     with pytest.raises(ConfigError):
         plan_pod("qwen38-27b", "7B 모델", CATALOG, api_key=TEST_API_KEY, post=post)
@@ -247,7 +246,13 @@ def test_plan_pod_rejects_secure_tier_without_price() -> None:
     ]
     post = PostRecorder((200, make_completions_body(VALID_MODEL_JSON)))
     with pytest.raises(ConfigError):
-        plan_pod("qwen38-27b", "7B 모델", catalog_with_none_price, api_key=TEST_API_KEY, post=post)
+        plan_pod(
+            "qwen38-27b",
+            "7B 모델",
+            catalog_with_none_price,
+            api_key=TEST_API_KEY,
+            post=post,
+        )
 
 
 @pytest.mark.parametrize(
@@ -374,63 +379,6 @@ def test_plan_pod_enforces_fixed_args_and_image() -> None:
     assert parsed["image"] == EXPECTED_IMAGE
 
 
-def test_plan_from_body_uses_provided_catalog_and_post(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XAI_API_KEY", TEST_API_KEY)
-
-    def _fail_catalog(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("gpu_catalog should not be called")
-
-    def _fail_client(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("RunPodClient should not be instantiated")
-
-    monkeypatch.setattr("podrouter.web.gpu_catalog", _fail_catalog)
-    monkeypatch.setattr("podrouter.client.RunPodClient", _fail_client)
-
-    post = PostRecorder()
-    body = {"name": "qwen38-27b", "wish": "7B 모델"}
-    res = plan_from_body(body, catalog=CATALOG, post=post)
-
-    yaml_text = res["yaml"] if isinstance(res, dict) else res
-    parsed = yaml.safe_load(yaml_text)
-    assert parsed["args"] == EXPECTED_ARGS
-    assert parsed["image"] == EXPECTED_IMAGE
-    assert parsed["gpu"]["candidates"] == ["NVIDIA A40"]
-    assert len(post.calls) == 1
-
-
-def test_plan_from_body_rejects_missing_xai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
-    post = PostRecorder()
-    body = {"name": "qwen38-27b", "wish": "7B 모델"}
-    with pytest.raises(ConfigError) as exc_info:
-        plan_from_body(body, catalog=CATALOG, post=post)
-    assert "XAI_API_KEY" in str(exc_info.value)
-    assert len(post.calls) == 0
-
-    monkeypatch.setenv("XAI_API_KEY", "")
-    with pytest.raises(ConfigError) as exc_info_empty:
-        plan_from_body(body, catalog=CATALOG, post=post)
-    assert "XAI_API_KEY" in str(exc_info_empty.value)
-    assert len(post.calls) == 0
-
-
-def test_plan_from_body_does_not_call_start_launch(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XAI_API_KEY", TEST_API_KEY)
-
-    def _fail_launch(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("start_launch should not be called")
-
-    monkeypatch.setattr("podrouter.web.start_launch", _fail_launch)
-
-    post = PostRecorder()
-    body = {"name": "qwen38-27b", "wish": "7B 모델"}
-    res = plan_from_body(body, catalog=CATALOG, post=post)
-    yaml_text = res["yaml"] if isinstance(res, dict) else res
-    parsed = yaml.safe_load(yaml_text)
-    assert parsed["args"] == EXPECTED_ARGS
-    assert len(post.calls) == 1
-
-
 def test_plan_pod_rejects_unoffered_tier_even_with_price() -> None:
     catalog = [
         {
@@ -454,121 +402,12 @@ def test_plan_pod_rejects_non_exact_gpu_id(bad_gpu_id: str) -> None:
         plan_pod("qwen38-27b", "7B 모델", CATALOG, api_key=TEST_API_KEY, post=post)
 
 
-def test_plan_from_body_missing_xai_key_does_not_call_catalog(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
-
-    def _fail_catalog(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("gpu_catalog should not be called")
-
-    monkeypatch.setattr("podrouter.web.gpu_catalog", _fail_catalog)
-    with pytest.raises(ConfigError, match="XAI_API_KEY"):
-        plan_from_body({"name": "qwen38-27b", "wish": "7B 모델"})
-
-
-def test_plan_from_body_invalid_name_does_not_call_catalog(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("XAI_API_KEY", TEST_API_KEY)
-
-    def _fail_catalog(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("gpu_catalog should not be called")
-
-    monkeypatch.setattr("podrouter.web.gpu_catalog", _fail_catalog)
-    with pytest.raises(ConfigError):
-        plan_from_body({"name": "-bad", "wish": "7B 모델"})
-
-
 def test_plan_pod_http_error_redacts_long_body_with_key() -> None:
     error_body = ("x" * 196 + TEST_API_KEY).encode("utf-8")
     post = PostRecorder((500, error_body))
     with pytest.raises(ConfigError) as exc_info:
         plan_pod("qwen38-27b", "7B 모델", CATALOG, api_key=TEST_API_KEY, post=post)
     assert "test-xai" not in str(exc_info.value)
-
-
-def test_handler_post_plan_protections(monkeypatch: pytest.MonkeyPatch) -> None:
-    import threading
-    from http.server import HTTPServer
-
-    from podrouter.web import Handler
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    def _fail_launch(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("start_launch should not be called")
-
-    monkeypatch.setattr("podrouter.web.start_launch", _fail_launch)
-
-    fake_plan = {"ok": True, "yaml": "test: ok"}
-    monkeypatch.setattr("podrouter.web.plan_from_body", lambda body: fake_plan)
-
-    base_url = f"http://127.0.0.1:{port}/api/plan"
-    valid_payload = json.dumps({"name": "qwen38-27b", "wish": "7B"}).encode("utf-8")
-
-    try:
-        # 1. Content-Type text/plain 은 400
-        req1 = urllib.request.Request(
-            base_url,
-            data=valid_payload,
-            headers={"Content-Type": "text/plain", "Host": f"127.0.0.1:{port}"},
-            method="POST",
-        )
-        with pytest.raises(urllib.error.HTTPError) as exc1:
-            urllib.request.urlopen(req1)
-        assert exc1.value.code == 400
-
-        # 2. Origin https://evil.example 와 application/json 은 400
-        req2 = urllib.request.Request(
-            base_url,
-            data=valid_payload,
-            headers={
-                "Content-Type": "application/json",
-                "Host": f"127.0.0.1:{port}",
-                "Origin": "https://evil.example",
-            },
-            method="POST",
-        )
-        with pytest.raises(urllib.error.HTTPError) as exc2:
-            urllib.request.urlopen(req2)
-        assert exc2.value.code == 400
-
-        # 3. Host evil.example 은 400
-        req3 = urllib.request.Request(
-            base_url,
-            data=valid_payload,
-            headers={
-                "Content-Type": "application/json",
-                "Host": "evil.example",
-            },
-            method="POST",
-        )
-        with pytest.raises(urllib.error.HTTPError) as exc3:
-            urllib.request.urlopen(req3)
-        assert exc3.value.code == 400
-
-        # 4. 올바른 Host, Content-Type application/json, plan_from_body 가짜 성공 -> 200, start_launch 안 불림
-        req4 = urllib.request.Request(
-            base_url,
-            data=valid_payload,
-            headers={
-                "Content-Type": "application/json",
-                "Host": f"127.0.0.1:{port}",
-                "Origin": f"http://127.0.0.1:{port}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req4) as resp:
-            assert resp.status == 200
-            body = json.loads(resp.read().decode())
-            assert body == fake_plan
-    finally:
-        server.shutdown()
-        server.server_close()
 
 
 def test_build_plan_matches_api_plan_without_calling_xai(
@@ -604,42 +443,6 @@ def test_build_plan_matches_api_plan_without_calling_xai(
     assert loaded.name == "my-pod"
     assert loaded.candidates == ("NVIDIA A40",)
     assert loaded.env == {}
-
-
-def test_plan_document_matches_config_from_body() -> None:
-    from podrouter.web import _config_from_body
-
-    post = PostRecorder()
-    res = plan_pod("qwen38-27b", "7B 모델", CATALOG, api_key=TEST_API_KEY, post=post)
-    plan_doc = res["document"]
-
-    body = {
-        "name": plan_doc["name"],
-        "cloud": plan_doc["gpu"]["cloud"],
-        "gpu_id": plan_doc["gpu"]["candidates"][0],
-        "port": plan_doc["port"],
-        "disk_gb": plan_doc["storage"]["container_disk_gb"],
-        "ttl": plan_doc["lifecycle"]["ttl"],
-        "image": plan_doc["image"],
-        "args": plan_doc["args"],
-    }
-    launch_doc = _config_from_body(body)["document"]
-    assert plan_doc == launch_doc
-
-
-def test_index_html_has_no_default_model_values() -> None:
-    html_path = Path(__file__).resolve().parents[1] / "src" / "podrouter" / "static" / "index.html"
-    html_text = html_path.read_text(encoding="utf-8")
-    assert 'value="qwen38-27b"' not in html_text
-    assert 'value="NVIDIA A40"' not in html_text
-    assert "bartowski" not in html_text
-
-
-def test_pod_lifecycle_html_retains_qwen_and_bartowski() -> None:
-    lifecycle_path = Path(__file__).resolve().parents[1] / "docs" / "pod-lifecycle.html"
-    lifecycle_text = lifecycle_path.read_text(encoding="utf-8")
-    assert "qwen38-27b" in lifecycle_text
-    assert "bartowski" in lifecycle_text
 
 
 def test_read_plan_fields_round_trips_build_plan() -> None:

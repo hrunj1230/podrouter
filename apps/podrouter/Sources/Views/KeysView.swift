@@ -23,7 +23,7 @@ struct KeysView: View {
                     .font(.title2)
                     .bold()
 
-                Text("Runpod API 키, Tailscale Auth 키, Cloudflare 터널 토큰, Hugging Face 토큰을 저장소의 .env 파일(나만 읽기 가능, 권한 0600)에 저장합니다. 웹 서버, 타이머, Claude 실행기도 같은 파일을 씁니다. 비밀값은 다시 화면에 나오지 않고 저장 여부만 표시됩니다.")
+                Text("Runpod API 키, Tailscale Auth 키, Cloudflare 터널 토큰, Hugging Face 토큰을 저장소의 .env 파일(나만 읽기 가능, 권한 0600)에 저장합니다. 타이머와 Claude 실행기도 같은 파일을 씁니다. 비밀값은 다시 화면에 나오지 않고 저장 여부만 표시됩니다.")
                     .font(.body)
                     .foregroundColor(.secondary)
 

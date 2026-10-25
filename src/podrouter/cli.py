@@ -11,7 +11,13 @@ from podrouter.client import RunPodClient
 from podrouter.config import load_config, resolve_api_key
 from podrouter.duration import parse_duration
 from podrouter.errors import ConfigError
-from podrouter.provision import bring_up, list_pods, list_pods_json, show_status, shut_down
+from podrouter.provision import (
+    bring_up,
+    list_pods,
+    list_pods_json,
+    show_status,
+    shut_down,
+)
 from podrouter.redact import Redactor
 
 
@@ -26,11 +32,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help(sys.stderr)
         return 2
-
-    if args.command == "web":
-        from podrouter.web import serve
-
-        return serve(host=args.host, port=args.port)
 
     if args.command == "schedule":
         from podrouter.local_schedule import run_schedule_cli
@@ -148,7 +149,9 @@ def _parser() -> argparse.ArgumentParser:
     _add_api_key(down)
 
     ls = sub.add_parser("ls", help="List pods this tool created")
-    ls.add_argument("--json", action="store_true", help="Print JSON with a health check per pod")
+    ls.add_argument(
+        "--json", action="store_true", help="Print JSON with a health check per pod"
+    )
     ls.add_argument("--health-path", default="/health", help="Health path for --json")
     _add_api_key(ls)
 
@@ -157,10 +160,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     status.add_argument("name", help="Pod name from the config")
     _add_api_key(status)
-
-    web = sub.add_parser("web", help="Open the local GPU stock and launch page")
-    web.add_argument("--host", default="127.0.0.1", help="Loopback host")
-    web.add_argument("--port", type=int, default=8765, help="Loopback port")
 
     schedule = sub.add_parser("schedule", help="Local LaunchAgent scheduler commands")
     sched_sub = schedule.add_subparsers(dest="schedule_command")
