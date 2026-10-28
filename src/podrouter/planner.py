@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from podrouter.duration import parse_duration
 from podrouter.errors import ConfigError
 
 _NAME_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,39}[A-Za-z0-9])?$")
@@ -19,6 +20,7 @@ _MODEL_REGEX = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{1,80}/[A-Za-z0-9][A-Za-z0-9._-]{1,120}"
     r"(?::[A-Za-z0-9][A-Za-z0-9._-]{1,32})?$"
 )
+DEFAULT_TTL = "3h"
 _FORBIDDEN_MODEL_CHARS = ('"', "'", " ", ";", "$", "`", "\\", "\n", "\r")
 
 _SYSTEM_PROMPT = (
@@ -247,8 +249,11 @@ def build_plan(
     context_tokens: object,
     reason: object,
     api_key: str = "",
+    ttl: object = DEFAULT_TTL,
 ) -> dict[str, Any]:
     """Validate a chosen GPU and public GGUF, then render the podrouter YAML.
+
+    `ttl` is how long the Pod lives before it deletes itself (`3h`, `30m`, `1h30m`).
 
     The subscription skill calls this directly. It does not contact xAI.
     """
@@ -296,6 +301,9 @@ def build_plan(
         raise ConfigError("reason은 1자 이상 400자 이하의 문자열이어야 합니다.")
     reason = _redact_text(reason, api_key)
 
+    parse_duration(ttl, field="ttl")
+    ttl_text = str(ttl).strip()
+
     document = {
         "name": name,
         "image": "ghcr.io/ggml-org/llama.cpp:server-cuda13",
@@ -316,7 +324,7 @@ def build_plan(
             "timeout_sec": 900,
         },
         "lifecycle": {
-            "ttl": "3h",
+            "ttl": ttl_text,
         },
         "timeouts": {
             "allocation_sec": 180,
@@ -394,10 +402,21 @@ def read_plan_fields(text: str) -> dict[str, Any]:
     if cloud not in ("SECURE", "COMMUNITY"):
         raise ConfigError("이 앱은 SECURE 또는 COMMUNITY 클라우드만 다룹니다.")
 
+    ttl_text = DEFAULT_TTL
+    lifecycle = doc.get("lifecycle")
+    if lifecycle is not None:
+        if not isinstance(lifecycle, dict):
+            raise ConfigError("lifecycle 항목은 사전이어야 합니다.")
+        if "ttl" in lifecycle:
+            raw_ttl = lifecycle["ttl"]
+            parse_duration(raw_ttl, field="ttl")
+            ttl_text = str(raw_ttl).strip()
+
     return {
         "name": name.strip(),
         "model": model,
         "gpu_id": candidates[0],
         "cloud": cloud,
         "context_tokens": context if context is not None else 8192,
+        "ttl": ttl_text,
     }

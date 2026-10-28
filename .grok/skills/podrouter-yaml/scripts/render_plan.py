@@ -71,6 +71,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
             model=args.model,
             context_tokens=args.context,
             reason=args.reason,
+            ttl=args.ttl,
         )
     except ConfigError as exc:
         print(_redact(str(exc)), file=sys.stderr)
@@ -92,6 +93,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
                 f"model={result['model']}",
                 f"context_tokens={result['context_tokens']}",
                 f"hourly_price={result['hourly_price']}",
+                f"ttl={result['document']['lifecycle']['ttl']}",
                 f"reason={result['reason']}",
             ]
         ),
@@ -132,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     render.add_argument("--model", required=True)
     render.add_argument("--context", required=True, type=int)
     render.add_argument("--reason", required=True)
+    render.add_argument(
+        "--ttl", default="3h", help="Pod 수명. 지나면 스스로 삭제 (3h, 30m, 1h30m)"
+    )
     render.add_argument("--out")
 
     inspect = sub.add_parser("inspect", help="print app form fields of a YAML as JSON")

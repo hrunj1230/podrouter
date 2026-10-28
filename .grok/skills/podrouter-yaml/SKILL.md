@@ -11,7 +11,7 @@ description: >
 
 이 스킬을 읽는 에이전트가 모델과 GPU를 고른다. `api.x.ai`를 호출하지 않는다. `XAI_API_KEY`를 읽거나 요구하지 않는다. 이 선택만을 위해 Orca 워커를 띄우지 않는다.
 
-YAML 본문과 검증 문구의 기준은 `src/podrouter/planner.py`의 `_SYSTEM_PROMPT`와 `build_plan`이다. 고르기 전에 그 둘을 읽는다. 이미지, 포트, 디스크, TTL은 스크립트가 넣는다. 에이전트는 이름, 용도, GPU, 클라우드, 공개 GGUF, 문맥 길이, 이유만 정한다.
+YAML 본문과 검증 문구의 기준은 `src/podrouter/planner.py`의 `_SYSTEM_PROMPT`와 `build_plan`이다. 고르기 전에 그 둘을 읽는다. 이미지, 포트는 스크립트가 넣는다. 에이전트는 이름, 용도, GPU, 클라우드, 공개 GGUF, 문맥 길이, 이유를 정하며, 사용자가 요청하면 수명(TTL, 기본 `3h`, `30m`/`1h30m` 형식)도 `--ttl`로 함께 전달한다.
 
 ## 입력
 
@@ -45,6 +45,8 @@ YAML 본문과 검증 문구의 기준은 `src/podrouter/planner.py`의 `_SYSTEM
   --context <정수> \
   --reason "<한 문장>"
 ```
+
+수명(TTL)은 기본 `3h`이며, 사용자가 원하면 `--ttl "<3h|30m|1h30m>"`으로 전달한다. 앱 예약 스케줄로 켤 때는 종료 시각(+15분) 기준 계산된 남은 TTL이 YAML TTL을 override한다.
 
 표준 출력이 YAML이다. 표준 오류의 `hourly_price`를 사용자에게 함께 말한다. 실패 문구는 그대로 전하고, 값을 바꿔 다시 렌더한다.
 

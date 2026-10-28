@@ -147,6 +147,17 @@ struct PodView: View {
                                 }
                         }
 
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("자동 삭제까지 시간 (TTL)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("예: 3h, 30m, 1h30m", text: $appState.podTTL)
+                                .textFieldStyle(.roundedBorder)
+                            Text("시작 후 지정한 시간이 지나면 Pod가 자동으로 삭제됩니다. 기존 실행 중인 Pod에는 즉시 반영되지 않으며, 예약 실행 시에는 예약 종료 시간 기준이 우선 적용됩니다.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
                         HStack {
                             Button(action: saveYaml) {
                                 Label("YAML 생성 및 저장", systemImage: "arrow.down.doc.fill")
@@ -413,6 +424,13 @@ struct PodView: View {
             return
         }
 
+        let trimmedTTL = appState.podTTL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let errorMsg = AppState.validateDuration(trimmedTTL) {
+            message = errorMsg
+            isError = true
+            return
+        }
+
         // 2. Validate destination path
         let outURL = appState.currentYamlURL
         let resolvedPath = outURL.resolvingSymlinksInPath().path
@@ -456,6 +474,7 @@ struct PodView: View {
             "--model", appState.podModel,
             "--context", "\(contextTokens)",
             "--reason", "podrouter preset",
+            "--ttl", trimmedTTL,
             "--out", outURL.path
         ]
 
@@ -479,6 +498,7 @@ struct PodView: View {
                                    message: result.isSuccess ? "YAML 저장" : "YAML 생성 실패 (종료 코드: \(result.exitCode))",
                                    detail: result.combinedOutput)
                 if result.isSuccess {
+                    appState.podTTL = trimmedTTL
                     appState.rememberCurrentFields()
                     appState.refreshSavedPods()
                     selectedSaved = name

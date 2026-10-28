@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -469,7 +470,87 @@ def test_read_plan_fields_round_trips_build_plan() -> None:
         "gpu_id": "NVIDIA A40",
         "cloud": "SECURE",
         "context_tokens": 196608,
+        "ttl": "3h",
     }
+
+
+def _a40_plan(**kwargs: Any) -> dict[str, Any]:
+    catalog = [
+        {
+            "id": "NVIDIA A40",
+            "secure": {"offered": True, "price": 0.44},
+            "community": {"offered": False, "price": None},
+        }
+    ]
+    return build_plan(
+        "qwen38-27b",
+        "테스트",
+        catalog,
+        gpu_id="NVIDIA A40",
+        cloud="SECURE",
+        model="bartowski/Example-7B-GGUF:Q4_K_M",
+        context_tokens=8192,
+        reason="테스트",
+        **kwargs,
+    )
+
+
+def test_build_plan_writes_custom_ttl(tmp_path: Path) -> None:
+    result = _a40_plan(ttl=" 1h30m ")
+    assert result["document"]["lifecycle"] == {"ttl": "1h30m"}
+    assert read_plan_fields(result["yaml"])["ttl"] == "1h30m"
+    path = tmp_path / "pod.yaml"
+    path.write_text(result["yaml"], encoding="utf-8")
+    assert load_config(path).ttl_sec == 5400
+
+
+@pytest.mark.parametrize("bad", ["", "3", "1d", "0h", "3h; rm", 3])
+def test_build_plan_rejects_bad_ttl(bad: object) -> None:
+    with pytest.raises(ConfigError):
+        _a40_plan(ttl=bad)
+
+
+def test_read_plan_fields_defaults_ttl_when_missing() -> None:
+    text = _a40_plan()["yaml"].replace("lifecycle:\n  ttl: 3h\n", "")
+    assert "lifecycle" not in text
+    assert read_plan_fields(text)["ttl"] == "3h"
+
+
+def test_read_plan_fields_defaults_ttl_when_lifecycle_has_no_ttl() -> None:
+    # lifecycle mapping exists, but ttl key is missing (legacy config form)
+    text = _a40_plan()["yaml"].replace("  ttl: 3h\n", "")
+    assert "lifecycle:" in text
+    assert "ttl:" not in text
+    assert read_plan_fields(text)["ttl"] == "3h"
+
+
+@pytest.mark.parametrize(
+    "bad_ttl_snippet",
+    [
+        "  ttl: null\n",
+        "  ttl: 3600\n",
+        "  ttl: 3\n",
+        "  ttl: ''\n",
+        '  ttl: ""\n',
+        "  ttl: 0h\n",
+        "  ttl: 1d\n",
+        "  ttl: bad\n",
+        "  ttl: '3h; rm'\n",
+    ],
+)
+def test_read_plan_fields_rejects_existing_bad_ttl(bad_ttl_snippet: str) -> None:
+    # Existing malformed/null/numeric ttl must raise ConfigError, not quietly fallback to 3h
+    text = _a40_plan()["yaml"].replace("  ttl: 3h\n", bad_ttl_snippet)
+    with pytest.raises(ConfigError):
+        read_plan_fields(text)
+
+
+def test_read_plan_fields_rejects_non_dict_lifecycle() -> None:
+    text = _a40_plan()["yaml"].replace(
+        "lifecycle:\n  ttl: 3h\n", "lifecycle: invalid_string\n"
+    )
+    with pytest.raises(ConfigError):
+        read_plan_fields(text)
 
 
 def test_read_plan_fields_reads_example_a40() -> None:
@@ -478,6 +559,7 @@ def test_read_plan_fields_reads_example_a40() -> None:
     assert fields["name"] == "qwen38-27b"
     assert fields["gpu_id"] == "NVIDIA A40"
     assert fields["context_tokens"] == 196608
+    assert fields["ttl"] == "3h"
 
 
 def test_read_plan_fields_rejects_vllm_yaml() -> None:
@@ -489,3 +571,149 @@ def test_read_plan_fields_rejects_vllm_yaml() -> None:
 def test_read_plan_fields_rejects_non_mapping() -> None:
     with pytest.raises(ConfigError):
         read_plan_fields("- a\n- b\n")
+
+
+def _get_render_plan_module():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / ".grok"
+        / "skills"
+        / "podrouter-yaml"
+        / "scripts"
+        / "render_plan.py"
+    )
+    spec = importlib.util.spec_from_file_location("render_plan", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_render_plan_cli_default_ttl(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mod = _get_render_plan_module()
+    monkeypatch.setattr(mod, "_catalog", lambda: CATALOG)
+    out_file = tmp_path / "plan.yaml"
+    rc = mod.main(
+        [
+            "render",
+            "--name",
+            "qwen-test",
+            "--wish",
+            "테스트",
+            "--gpu-id",
+            "NVIDIA A40",
+            "--cloud",
+            "SECURE",
+            "--model",
+            "bartowski/Example-7B-GGUF:Q4_K_M",
+            "--context",
+            "8192",
+            "--reason",
+            "테스트",
+            "--out",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "ttl=3h" in captured.err
+    loaded = read_plan_fields(out_file.read_text(encoding="utf-8"))
+    assert loaded["ttl"] == "3h"
+
+
+def test_render_plan_cli_custom_ttl(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mod = _get_render_plan_module()
+    monkeypatch.setattr(mod, "_catalog", lambda: CATALOG)
+    out_file = tmp_path / "custom.yaml"
+    rc = mod.main(
+        [
+            "render",
+            "--name",
+            "qwen-custom",
+            "--wish",
+            "테스트",
+            "--gpu-id",
+            "NVIDIA A40",
+            "--cloud",
+            "SECURE",
+            "--model",
+            "bartowski/Example-7B-GGUF:Q4_K_M",
+            "--context",
+            "8192",
+            "--ttl",
+            "1h30m",
+            "--reason",
+            "테스트",
+            "--out",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "ttl=1h30m" in captured.err
+    loaded = read_plan_fields(out_file.read_text(encoding="utf-8"))
+    assert loaded["ttl"] == "1h30m"
+
+
+def test_render_plan_cli_rejects_bad_ttl(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _get_render_plan_module()
+    monkeypatch.setattr(mod, "_catalog", lambda: CATALOG)
+    rc = mod.main(
+        [
+            "render",
+            "--name",
+            "qwen-bad",
+            "--wish",
+            "테스트",
+            "--gpu-id",
+            "NVIDIA A40",
+            "--cloud",
+            "SECURE",
+            "--model",
+            "bartowski/Example-7B-GGUF:Q4_K_M",
+            "--context",
+            "8192",
+            "--ttl",
+            "0h",
+            "--reason",
+            "테스트",
+        ]
+    )
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "ttl" in captured.err
+
+
+def test_render_plan_inspect_cli(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    mod = _get_render_plan_module()
+    plan_file = tmp_path / "inspect_target.yaml"
+    plan_file.write_text(_a40_plan(ttl="45m")["yaml"], encoding="utf-8")
+    rc = mod.main(["inspect", "--file", str(plan_file)])
+    assert rc == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ttl"] == "45m"
+    assert output["name"] == "qwen38-27b"
+
+
+def test_render_plan_inspect_cli_rejects_bad_ttl(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    mod = _get_render_plan_module()
+    plan_file = tmp_path / "bad_target.yaml"
+    bad_yaml = _a40_plan()["yaml"].replace("  ttl: 3h\n", "  ttl: 3600\n")
+    plan_file.write_text(bad_yaml, encoding="utf-8")
+    rc = mod.main(["inspect", "--file", str(plan_file)])
+    assert rc == 1
+    assert "ttl" in capsys.readouterr().err

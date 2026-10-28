@@ -47,6 +47,7 @@ public final class AppState: ObservableObject {
     @Published public var podGpuId: String = "NVIDIA A40"
     @Published public var podCloud: String = "SECURE"
     @Published public var podContextTokens: Int = 196608
+    @Published public var podTTL: String = "3h"
 
     /// Names of YAML files saved in the pods folder, newest first.
     @Published public var savedPodNames: [String] = []
@@ -221,10 +222,70 @@ public final class AppState: ObservableObject {
         public var gpu_id: String
         public var cloud: String
         public var context_tokens: Int
+        public var ttl: String
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case model
+            case gpu_id
+            case cloud
+            case context_tokens
+            case ttl
+        }
+
+        public init(
+            name: String,
+            model: String,
+            gpu_id: String,
+            cloud: String,
+            context_tokens: Int,
+            ttl: String = "3h"
+        ) {
+            self.name = name
+            self.model = model
+            self.gpu_id = gpu_id
+            self.cloud = cloud
+            self.context_tokens = context_tokens
+            let trimmed = ttl.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.ttl = trimmed.isEmpty ? "3h" : trimmed
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.name = try container.decode(String.self, forKey: .name)
+            self.model = try container.decode(String.self, forKey: .model)
+            self.gpu_id = try container.decode(String.self, forKey: .gpu_id)
+            self.cloud = try container.decode(String.self, forKey: .cloud)
+            self.context_tokens = try container.decode(Int.self, forKey: .context_tokens)
+            let decodedTTL = try container.decodeIfPresent(String.self, forKey: .ttl)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let decodedTTL, !decodedTTL.isEmpty {
+                self.ttl = decodedTTL
+            } else {
+                self.ttl = "3h"
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(name, forKey: .name)
+            try container.encode(model, forKey: .model)
+            try container.encode(gpu_id, forKey: .gpu_id)
+            try container.encode(cloud, forKey: .cloud)
+            try container.encode(context_tokens, forKey: .context_tokens)
+            try container.encode(ttl, forKey: .ttl)
+        }
     }
 
     public var currentFields: PodFields {
-        PodFields(name: podName, model: podModel, gpu_id: podGpuId, cloud: podCloud, context_tokens: podContextTokens)
+        PodFields(
+            name: podName,
+            model: podModel,
+            gpu_id: podGpuId,
+            cloud: podCloud,
+            context_tokens: podContextTokens,
+            ttl: podTTL
+        )
     }
 
     public func applyFields(_ fields: PodFields) {
@@ -233,6 +294,8 @@ public final class AppState: ObservableObject {
         podGpuId = fields.gpu_id
         podCloud = fields.cloud
         podContextTokens = fields.context_tokens
+        let trimmedTTL = fields.ttl.trimmingCharacters(in: .whitespacesAndNewlines)
+        podTTL = trimmedTTL.isEmpty ? "3h" : trimmedTTL
         rememberCurrentFields()
     }
 
@@ -251,6 +314,8 @@ public final class AppState: ObservableObject {
         podGpuId = fields.gpu_id
         podCloud = fields.cloud
         podContextTokens = fields.context_tokens
+        let trimmedTTL = fields.ttl.trimmingCharacters(in: .whitespacesAndNewlines)
+        podTTL = trimmedTTL.isEmpty ? "3h" : trimmedTTL
     }
 
     public func yamlURL(forPodNamed name: String) -> URL {
@@ -315,5 +380,53 @@ public final class AppState: ObservableObject {
         podGpuId = "NVIDIA A40"
         podCloud = "SECURE"
         podContextTokens = 196608
+        podTTL = "3h"
+    }
+
+    /// Validate duration text like `3h`, `30m`, or `1h30m`.
+    /// Returns nil if valid, or an error message in Korean.
+    nonisolated public static func validateDuration(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "자동 삭제까지 시간 (TTL)을 입력해주세요. (예: 3h, 30m, 1h30m)"
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: "^(?:(\\d+)h)?(?:(\\d+)m)?$") else {
+            return "정규표현식 오류"
+        }
+        let nsString = trimmed as NSString
+        guard let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: nsString.length)),
+              match.range.location == 0, match.range.length == nsString.length else {
+            return "TTL은 3h, 30m, 1h30m과 같은 형식(양의 시간·분)이어야 합니다."
+        }
+
+        let hoursRange = match.range(at: 1)
+        let minutesRange = match.range(at: 2)
+
+        if hoursRange.location == NSNotFound && minutesRange.location == NSNotFound {
+            return "TTL은 3h, 30m, 1h30m과 같은 형식(양의 시간·분)이어야 합니다."
+        }
+
+        var hasPositiveDigit = false
+
+        if hoursRange.location != NSNotFound {
+            let hStr = nsString.substring(with: hoursRange)
+            if hStr.contains(where: { $0 >= "1" && $0 <= "9" }) {
+                hasPositiveDigit = true
+            }
+        }
+
+        if minutesRange.location != NSNotFound {
+            let mStr = nsString.substring(with: minutesRange)
+            if mStr.contains(where: { $0 >= "1" && $0 <= "9" }) {
+                hasPositiveDigit = true
+            }
+        }
+
+        if !hasPositiveDigit {
+            return "TTL은 0보다 커야 합니다."
+        }
+
+        return nil
     }
 }
