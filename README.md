@@ -16,7 +16,9 @@ macOS 14 이상, Apple Silicon과 Intel Mac 모두 지원합니다.
 ### Homebrew (권장)
 
 ```bash
-brew install --cask hrunj1230/tap/podrouter
+brew tap hrunj1230/tap
+brew trust hrunj1230/tap      # 개인 tap은 한 번 신뢰 등록이 필요합니다
+brew install --cask podrouter
 ```
 
 - Python 3.12가 함께 설치됩니다. 앱을 처음 열면 podrouter 실행 환경을 한 번 준비합니다(1~2분, 인터넷 필요).

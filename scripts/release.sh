@@ -58,7 +58,9 @@ gh release create "v$VERSION" "$ZIP" --repo "$RA_REPO" --title "v$VERSION" --not
 ## 설치
 
 \`\`\`bash
-brew install --cask ${RA_TAP%%/*}/tap/podrouter
+brew tap ${RA_TAP%%/*}/tap
+brew trust ${RA_TAP%%/*}/tap
+brew install --cask podrouter
 \`\`\`
 
 업데이트: \`brew upgrade --cask podrouter\`
@@ -70,7 +72,7 @@ NOTES
 
 step "Homebrew tap 갱신 ($RA_TAP)"
 TAP_DIR="$(mktemp -d)"
-gh repo clone "$RA_TAP" "$TAP_DIR" -- --quiet
+git clone --quiet "https://github.com/$RA_TAP.git" "$TAP_DIR"
 mkdir -p "$TAP_DIR/Casks"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" -e "s#@REPO@#$RA_REPO#g" \
     packaging/homebrew/podrouter.rb.template > "$TAP_DIR/Casks/podrouter.rb"
@@ -80,4 +82,4 @@ git -C "$TAP_DIR" push
 rm -rf "$TAP_DIR"
 
 step "완료: v$VERSION"
-print "  설치: brew install --cask ${RA_TAP%%/*}/tap/podrouter"
+print "  설치: brew tap ${RA_TAP%%/*}/tap && brew trust ${RA_TAP%%/*}/tap && brew install --cask podrouter"

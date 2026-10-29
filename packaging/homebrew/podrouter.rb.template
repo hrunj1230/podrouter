@@ -4,19 +4,17 @@ cask "podrouter" do
 
   url "https://github.com/@REPO@/releases/download/v#{version}/podrouter.zip"
   name "podrouter"
-  desc "Turn RunPod GPU pods on and off from a Mac app"
+  desc "Turn RunPod GPU pods on and off"
   homepage "https://github.com/@REPO@"
 
-  depends_on macos: ">= :sonoma"
   depends_on formula: "python@3.12"
+  depends_on macos: :sonoma
 
   app "podrouter.app"
 
   # Ad-hoc signed, not notarized. Clearing quarantine lets it open without a warning.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-cr", "#{appdir}/podrouter.app"],
-                   sudo: false
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-cr", "{{appdir}}/podrouter.app"]
   end
 
   uninstall launchctl: "io.github.hrunj1230.podrouter"
