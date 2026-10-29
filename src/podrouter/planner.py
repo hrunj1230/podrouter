@@ -23,11 +23,47 @@ _MODEL_REGEX = re.compile(
 DEFAULT_TTL = "3h"
 _FORBIDDEN_MODEL_CHARS = ('"', "'", " ", ";", "$", "`", "\\", "\n", "\r")
 # The start command is wrapped in a shell, and tunnel modes refuse quotes.
-_FORBIDDEN_EXTRA_ARG_CHARS = ('"', "'", ";", "$", "`", "\\", "|", "&", "<", ">", "\n", "\r")
+_FORBIDDEN_EXTRA_ARG_CHARS = (
+    '"',
+    "'",
+    ";",
+    "$",
+    "`",
+    "\\",
+    "|",
+    "&",
+    "<",
+    ">",
+    "(",
+    ")",
+    "#",
+    "*",
+    "?",
+    "[",
+    "]",
+    "{",
+    "}",
+    "~",
+    "\n",
+    "\r",
+)
 _EXTRA_ARGS_MAX_LEN = 500
 # Flags build_plan writes itself, each followed by a value.
 _MANAGED_VALUE_FLAGS = ("-hf", "--hf-repo", "-c", "--ctx-size", "--host", "--port", "-ngl")
 _MANAGED_FLAGS = (*_MANAGED_VALUE_FLAGS, "--jinja")
+# Disallowed in extra_args because the app or planner manages them.
+# Includes llama.cpp aliases and quant overrides that would desync the app's managed fields.
+_VALIDATOR_BLOCKED_FLAGS = frozenset(
+    (
+        *_MANAGED_FLAGS,
+        "-hfr",
+        "-hff",
+        "--hf-file",
+        "--gpu-layers",
+        "--n-gpu-layers",
+        "--no-jinja",
+    )
+)
 
 _SYSTEM_PROMPT = (
     "당신은 GPU 및 LLM 모델 추천 전문가입니다. 사용자의 요청(Pod 이름과 용도)과 제공된 GPU 카탈로그를 분석하여 "
@@ -372,7 +408,10 @@ def validate_extra_args(extra_args: object) -> str:
         shown = " ".join(repr(ch) for ch in bad)
         raise ConfigError(f"추가 실행 옵션에 쓸 수 없는 문자가 있습니다: {shown}")
     for token in text.split():
-        if token.split("=", 1)[0] in _MANAGED_FLAGS:
+        opt = token.split("=", 1)[0]
+        if opt.startswith("--"):
+            opt = "--" + opt[2:].replace("_", "-")
+        if opt in _VALIDATOR_BLOCKED_FLAGS:
             raise ConfigError(
                 f"{token}은(는) 앱이 직접 정하는 옵션이라 추가 실행 옵션에 쓸 수 없습니다."
             )

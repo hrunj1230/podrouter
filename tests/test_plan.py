@@ -593,6 +593,111 @@ def test_build_plan_rejects_bad_extra_args(bad: object) -> None:
         _a40_plan(extra_args=bad)
 
 
+@pytest.mark.parametrize(
+    "alias_arg",
+    [
+        "(touch /tmp/x)",
+        "(foo)",
+        "touch /tmp/x (test)",
+        "touch /tmp/x )",
+        "touch /tmp/x (",
+        "-hfr other/Repo:Q2_K",
+        "-hfr=other/Repo:Q2_K",
+        "--hf_repo other/Repo:Q2_K",
+        "--hf_repo=other/Repo:Q2_K",
+        "--hf-repo=other/Repo:Q2_K",
+        "-hff other.gguf",
+        "-hff=other.gguf",
+        "--hf-file other.gguf",
+        "--hf-file=other.gguf",
+        "--hf_file other.gguf",
+        "--hf_file=other.gguf",
+        "--ctx_size 2048",
+        "--ctx_size=2048",
+        "-c=2048",
+        "-ngl=0",
+        "--n-gpu-layers 0",
+        "--n-gpu-layers=0",
+        "--n_gpu_layers 0",
+        "--n_gpu_layers=0",
+        "--gpu-layers 0",
+        "--gpu-layers=0",
+        "--gpu_layers 0",
+        "--gpu_layers=0",
+        "--no-jinja",
+        "--no-jinja=true",
+        "--no_jinja",
+        "--no_jinja=true",
+        "--jinja",
+        "--jinja=true",
+        "--host=0.0.0.0",
+        "--port=8080",
+    ],
+)
+def test_build_plan_rejects_managed_flag_aliases_and_parentheses(
+    alias_arg: str,
+) -> None:
+    with pytest.raises(ConfigError, match="추가 실행 옵션"):
+        _a40_plan(extra_args=alias_arg)
+
+
+@pytest.mark.parametrize(
+    "shell_arg",
+    [
+        "--alias #1",
+        "--alias *",
+        "--alias ?",
+        "--alias [ab]",
+        "--alias {a,b}",
+        "--alias ~",
+        "--alias a]",
+        "--alias [a",
+        "--alias a}",
+        "--alias {a",
+        "--alias prefix#suffix",
+        "--alias file*",
+        "--alias file?",
+        "--alias ~/models",
+    ],
+)
+def test_build_plan_rejects_shell_expansion_chars(shell_arg: str) -> None:
+    with pytest.raises(ConfigError, match="추가 실행 옵션"):
+        _a40_plan(extra_args=shell_arg)
+
+
+@pytest.mark.parametrize(
+    "valid_args",
+    [
+        "--reasoning-budget 0 --temp 0.7 --cache-type-k f16",
+        "--alias model_name",
+        "--alias model_name --chat-template chat_template_default",
+        "--lora /path/to/my_lora_v1.gguf",
+    ],
+)
+def test_build_plan_preserves_valid_extra_args(
+    tmp_path: Path, valid_args: str
+) -> None:
+    result = _a40_plan(extra_args=valid_args)
+    assert result["document"]["args"].endswith(valid_args)
+    fields = read_plan_fields(result["yaml"])
+    assert fields["extra_args"] == valid_args
+    path = tmp_path / "valid_extra.yaml"
+    path.write_text(result["yaml"], encoding="utf-8")
+    loaded = load_config(path)
+    assert loaded.args.endswith(valid_args)
+
+
+def test_read_plan_fields_preserves_unmanaged_tokens_in_hand_edited_yaml() -> None:
+    # Verify that new blocked flags are NOT added to _MANAGED_FLAGS / _MANAGED_VALUE_FLAGS,
+    # so read_plan_fields does not silently swallow or mutate hand-edited extra tokens.
+    text = _a40_plan()["yaml"].replace(
+        "--jinja", "--jinja -hfr custom/Repo:Q2_K -hff custom.gguf"
+    )
+    fields = read_plan_fields(text)
+    assert "-hfr custom/Repo:Q2_K" in fields["extra_args"]
+    assert "-hff custom.gguf" in fields["extra_args"]
+
+
 def test_read_plan_fields_reads_hand_edited_extra_args() -> None:
     text = _a40_plan()["yaml"].replace("--jinja", "--jinja --reasoning-budget 0")
     assert read_plan_fields(text)["extra_args"] == "--reasoning-budget 0"

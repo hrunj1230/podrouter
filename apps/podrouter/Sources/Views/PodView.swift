@@ -164,7 +164,7 @@ struct PodView: View {
                                 .fontWeight(.medium)
                             TextField("예: --reasoning-budget 0", text: $appState.podExtraArgs)
                                 .textFieldStyle(.roundedBorder)
-                            Text("llama-server 실행 명령 끝에 붙습니다. 비워 두면 기본 옵션만 씁니다. 따옴표와 ; $ ` | & < > \\ 는 쓸 수 없고, 모델·문맥·포트처럼 위 칸에서 정하는 옵션은 넣을 수 없습니다.")
+                            Text("llama-server 실행 명령 끝에 붙습니다. 비워 두면 기본 옵션만 씁니다. 따옴표와 ; $ ` | & < > ( ) # * ? [ ] { } ~ \\ 는 쓸 수 없고, 모델·문맥·포트처럼 위 칸에서 정하는 옵션은 넣을 수 없습니다.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
