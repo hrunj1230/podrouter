@@ -62,6 +62,7 @@ description: >
 ```
 
 - `--ttl`은 Pod 수명이며 생략 시 기본 `3h`입니다 (`30m`, `1h30m` 형식 지원).
+- 사용자가 llama-server 옵션(예: 생각 과정 끄기 `--reasoning-budget 0`)을 원하면 `--extra-args="--reasoning-budget 0"`처럼 `=` 형태로 붙인다. 따옴표, `; $ ` | & < > \`, 그리고 `-hf -c --ctx-size --host --port -ngl --jinja`는 쓸 수 없다.
 - 앱의 예약 스케줄(타이머)로 켜지는 경우, 설정된 종료 시각(+15분)에 맞춰 계산된 남은 수명이 YAML의 TTL을 override합니다.
 
 실패하면 오류 문구를 그대로 전하고 값을 고쳐 다시 렌더한다. 성공하면 표준 오류의 `hourly_price`를 함께 알리고, 이렇게 안내한다.

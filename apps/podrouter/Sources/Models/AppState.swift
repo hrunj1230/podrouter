@@ -48,6 +48,7 @@ public final class AppState: ObservableObject {
     @Published public var podCloud: String = "SECURE"
     @Published public var podContextTokens: Int = 196608
     @Published public var podTTL: String = "3h"
+    @Published public var podExtraArgs: String = ""
 
     /// Names of YAML files saved in the pods folder, newest first.
     @Published public var savedPodNames: [String] = []
@@ -223,6 +224,7 @@ public final class AppState: ObservableObject {
         public var cloud: String
         public var context_tokens: Int
         public var ttl: String
+        public var extra_args: String
 
         enum CodingKeys: String, CodingKey {
             case name
@@ -231,6 +233,7 @@ public final class AppState: ObservableObject {
             case cloud
             case context_tokens
             case ttl
+            case extra_args
         }
 
         public init(
@@ -239,7 +242,8 @@ public final class AppState: ObservableObject {
             gpu_id: String,
             cloud: String,
             context_tokens: Int,
-            ttl: String = "3h"
+            ttl: String = "3h",
+            extra_args: String = ""
         ) {
             self.name = name
             self.model = model
@@ -248,6 +252,7 @@ public final class AppState: ObservableObject {
             self.context_tokens = context_tokens
             let trimmed = ttl.trimmingCharacters(in: .whitespacesAndNewlines)
             self.ttl = trimmed.isEmpty ? "3h" : trimmed
+            self.extra_args = extra_args.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         public init(from decoder: Decoder) throws {
@@ -264,6 +269,8 @@ public final class AppState: ObservableObject {
             } else {
                 self.ttl = "3h"
             }
+            self.extra_args = (try container.decodeIfPresent(String.self, forKey: .extra_args) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -274,6 +281,7 @@ public final class AppState: ObservableObject {
             try container.encode(cloud, forKey: .cloud)
             try container.encode(context_tokens, forKey: .context_tokens)
             try container.encode(ttl, forKey: .ttl)
+            try container.encode(extra_args, forKey: .extra_args)
         }
     }
 
@@ -284,7 +292,8 @@ public final class AppState: ObservableObject {
             gpu_id: podGpuId,
             cloud: podCloud,
             context_tokens: podContextTokens,
-            ttl: podTTL
+            ttl: podTTL,
+            extra_args: podExtraArgs
         )
     }
 
@@ -296,6 +305,7 @@ public final class AppState: ObservableObject {
         podContextTokens = fields.context_tokens
         let trimmedTTL = fields.ttl.trimmingCharacters(in: .whitespacesAndNewlines)
         podTTL = trimmedTTL.isEmpty ? "3h" : trimmedTTL
+        podExtraArgs = fields.extra_args
         rememberCurrentFields()
     }
 
@@ -316,6 +326,7 @@ public final class AppState: ObservableObject {
         podContextTokens = fields.context_tokens
         let trimmedTTL = fields.ttl.trimmingCharacters(in: .whitespacesAndNewlines)
         podTTL = trimmedTTL.isEmpty ? "3h" : trimmedTTL
+        podExtraArgs = fields.extra_args
     }
 
     public func yamlURL(forPodNamed name: String) -> URL {
@@ -381,6 +392,7 @@ public final class AppState: ObservableObject {
         podCloud = "SECURE"
         podContextTokens = 196608
         podTTL = "3h"
+        podExtraArgs = ""
     }
 
     /// Validate duration text like `3h`, `30m`, or `1h30m`.

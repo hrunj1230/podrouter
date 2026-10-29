@@ -72,6 +72,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
             context_tokens=args.context,
             reason=args.reason,
             ttl=args.ttl,
+            extra_args=args.extra_args,
         )
     except ConfigError as exc:
         print(_redact(str(exc)), file=sys.stderr)
@@ -94,6 +95,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
                 f"context_tokens={result['context_tokens']}",
                 f"hourly_price={result['hourly_price']}",
                 f"ttl={result['document']['lifecycle']['ttl']}",
+                f"args={result['document']['args']}",
                 f"reason={result['reason']}",
             ]
         ),
@@ -136,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:
     render.add_argument("--reason", required=True)
     render.add_argument(
         "--ttl", default="3h", help="Pod 수명. 지나면 스스로 삭제 (3h, 30m, 1h30m)"
+    )
+    render.add_argument(
+        "--extra-args",
+        default="",
+        help="llama-server 추가 옵션. -로 시작하므로 --extra-args=\"--reasoning-budget 0\" 형태로 넘긴다",
     )
     render.add_argument("--out")
 

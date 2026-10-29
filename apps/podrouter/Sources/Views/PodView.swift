@@ -158,6 +158,17 @@ struct PodView: View {
                                 .foregroundColor(.secondary)
                         }
 
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("추가 실행 옵션 (llama-server)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("예: --reasoning-budget 0", text: $appState.podExtraArgs)
+                                .textFieldStyle(.roundedBorder)
+                            Text("llama-server 실행 명령 끝에 붙습니다. 비워 두면 기본 옵션만 씁니다. 따옴표와 ; $ ` | & < > \\ 는 쓸 수 없고, 모델·문맥·포트처럼 위 칸에서 정하는 옵션은 넣을 수 없습니다.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
                         HStack {
                             Button(action: saveYaml) {
                                 Label("YAML 생성 및 저장", systemImage: "arrow.down.doc.fill")
@@ -464,6 +475,7 @@ struct PodView: View {
         }
 
         let contextTokens = appState.podContextTokens
+        let extraArgs = appState.podExtraArgs.trimmingCharacters(in: .whitespacesAndNewlines)
         let arguments = [
             scriptURL.path,
             "render",
@@ -475,6 +487,8 @@ struct PodView: View {
             "--context", "\(contextTokens)",
             "--reason", "podrouter preset",
             "--ttl", trimmedTTL,
+            // `=` form: the value starts with `-`, which argparse would read as a flag.
+            "--extra-args=\(extraArgs)",
             "--out", outURL.path
         ]
 
@@ -499,6 +513,7 @@ struct PodView: View {
                                    detail: result.combinedOutput)
                 if result.isSuccess {
                     appState.podTTL = trimmedTTL
+                    appState.podExtraArgs = extraArgs
                     appState.rememberCurrentFields()
                     appState.refreshSavedPods()
                     selectedSaved = name

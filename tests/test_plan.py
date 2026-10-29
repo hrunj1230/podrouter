@@ -471,6 +471,7 @@ def test_read_plan_fields_round_trips_build_plan() -> None:
         "cloud": "SECURE",
         "context_tokens": 196608,
         "ttl": "3h",
+        "extra_args": "",
     }
 
 
@@ -551,6 +552,50 @@ def test_read_plan_fields_rejects_non_dict_lifecycle() -> None:
     )
     with pytest.raises(ConfigError):
         read_plan_fields(text)
+
+
+def test_build_plan_appends_extra_args(tmp_path: Path) -> None:
+    result = _a40_plan(extra_args="  --reasoning-budget 0   --temp 0.7 ")
+    assert result["document"]["args"] == f"{EXPECTED_ARGS} --reasoning-budget 0 --temp 0.7"
+    fields = read_plan_fields(result["yaml"])
+    assert fields["extra_args"] == "--reasoning-budget 0 --temp 0.7"
+    assert fields["context_tokens"] == 8192
+    path = tmp_path / "pod.yaml"
+    path.write_text(result["yaml"], encoding="utf-8")
+    assert load_config(path).args.endswith("--jinja --reasoning-budget 0 --temp 0.7")
+
+
+def test_build_plan_empty_extra_args_keeps_fixed_args() -> None:
+    assert _a40_plan(extra_args="   ")["document"]["args"] == EXPECTED_ARGS
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "--chat-template-kwargs '{\"enable_thinking\":false}'",
+        "--alias a;rm",
+        "--alias $HOME",
+        "--alias `id`",
+        "--alias a|b",
+        "--alias a&b",
+        "--alias a\\b",
+        "-c 4096",
+        "--ctx-size=4096",
+        "-hf other/repo",
+        "--port 9000",
+        "-ngl 10",
+        "x" * 501,
+        None,
+    ],
+)
+def test_build_plan_rejects_bad_extra_args(bad: object) -> None:
+    with pytest.raises(ConfigError, match="추가 실행 옵션"):
+        _a40_plan(extra_args=bad)
+
+
+def test_read_plan_fields_reads_hand_edited_extra_args() -> None:
+    text = _a40_plan()["yaml"].replace("--jinja", "--jinja --reasoning-budget 0")
+    assert read_plan_fields(text)["extra_args"] == "--reasoning-budget 0"
 
 
 def test_read_plan_fields_reads_example_a40() -> None:
@@ -692,6 +737,42 @@ def test_render_plan_cli_rejects_bad_ttl(
     assert rc == 1
     captured = capsys.readouterr()
     assert "ttl" in captured.err
+
+
+def test_render_plan_cli_extra_args(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    mod = _get_render_plan_module()
+    monkeypatch.setattr(mod, "_catalog", lambda: CATALOG)
+    out_file = tmp_path / "extra.yaml"
+    rc = mod.main(
+        [
+            "render",
+            "--name",
+            "qwen-extra",
+            "--wish",
+            "테스트",
+            "--gpu-id",
+            "NVIDIA A40",
+            "--cloud",
+            "SECURE",
+            "--model",
+            "bartowski/Example-7B-GGUF:Q4_K_M",
+            "--context",
+            "8192",
+            "--reason",
+            "테스트",
+            "--extra-args=--reasoning-budget=0",
+            "--out",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    assert "--reasoning-budget=0" in capsys.readouterr().err
+    loaded = read_plan_fields(out_file.read_text(encoding="utf-8"))
+    assert loaded["extra_args"] == "--reasoning-budget=0"
 
 
 def test_render_plan_inspect_cli(

@@ -22,6 +22,12 @@ _MODEL_REGEX = re.compile(
 )
 DEFAULT_TTL = "3h"
 _FORBIDDEN_MODEL_CHARS = ('"', "'", " ", ";", "$", "`", "\\", "\n", "\r")
+# The start command is wrapped in a shell, and tunnel modes refuse quotes.
+_FORBIDDEN_EXTRA_ARG_CHARS = ('"', "'", ";", "$", "`", "\\", "|", "&", "<", ">", "\n", "\r")
+_EXTRA_ARGS_MAX_LEN = 500
+# Flags build_plan writes itself, each followed by a value.
+_MANAGED_VALUE_FLAGS = ("-hf", "--hf-repo", "-c", "--ctx-size", "--host", "--port", "-ngl")
+_MANAGED_FLAGS = (*_MANAGED_VALUE_FLAGS, "--jinja")
 
 _SYSTEM_PROMPT = (
     "당신은 GPU 및 LLM 모델 추천 전문가입니다. 사용자의 요청(Pod 이름과 용도)과 제공된 GPU 카탈로그를 분석하여 "
@@ -250,10 +256,12 @@ def build_plan(
     reason: object,
     api_key: str = "",
     ttl: object = DEFAULT_TTL,
+    extra_args: object = "",
 ) -> dict[str, Any]:
     """Validate a chosen GPU and public GGUF, then render the podrouter YAML.
 
     `ttl` is how long the Pod lives before it deletes itself (`3h`, `30m`, `1h30m`).
+    `extra_args` is appended to the llama-server command (`--reasoning-budget 0`).
 
     The subscription skill calls this directly. It does not contact xAI.
     """
@@ -304,10 +312,15 @@ def build_plan(
     parse_duration(ttl, field="ttl")
     ttl_text = str(ttl).strip()
 
+    extra_text = validate_extra_args(extra_args)
+    args = f"-hf {model} --host 0.0.0.0 --port 8080 -c {context_tokens} -ngl 99 --jinja"
+    if extra_text:
+        args = f"{args} {extra_text}"
+
     document = {
         "name": name,
         "image": "ghcr.io/ggml-org/llama.cpp:server-cuda13",
-        "args": f"-hf {model} --host 0.0.0.0 --port 8080 -c {context_tokens} -ngl 99 --jinja",
+        "args": args,
         "gpu": {
             "candidates": [gpu_id],
             "count": 1,
@@ -345,6 +358,42 @@ def build_plan(
         "reason": reason,
         "hourly_price": hourly_price,
     }
+
+
+def validate_extra_args(extra_args: object) -> str:
+    """Return extra llama-server options as one trimmed line, or raise ConfigError."""
+    if not isinstance(extra_args, str):
+        raise ConfigError("추가 실행 옵션은 문자열이어야 합니다.")
+    text = " ".join(extra_args.split())
+    if len(text) > _EXTRA_ARGS_MAX_LEN:
+        raise ConfigError(f"추가 실행 옵션은 {_EXTRA_ARGS_MAX_LEN}자 이하여야 합니다.")
+    bad = [ch for ch in _FORBIDDEN_EXTRA_ARG_CHARS if ch in text]
+    if bad:
+        shown = " ".join(repr(ch) for ch in bad)
+        raise ConfigError(f"추가 실행 옵션에 쓸 수 없는 문자가 있습니다: {shown}")
+    for token in text.split():
+        if token.split("=", 1)[0] in _MANAGED_FLAGS:
+            raise ConfigError(
+                f"{token}은(는) 앱이 직접 정하는 옵션이라 추가 실행 옵션에 쓸 수 없습니다."
+            )
+    return text
+
+
+def _extra_args_from_tokens(tokens: list[str]) -> str:
+    """Drop the flags build_plan writes and return the rest as one line."""
+    rest: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in _MANAGED_VALUE_FLAGS:
+            skip_next = True
+            continue
+        if token.split("=", 1)[0] in _MANAGED_FLAGS:
+            continue
+        rest.append(token)
+    return " ".join(rest)
 
 
 def read_plan_fields(text: str) -> dict[str, Any]:
@@ -419,4 +468,5 @@ def read_plan_fields(text: str) -> dict[str, Any]:
         "cloud": cloud,
         "context_tokens": context if context is not None else 8192,
         "ttl": ttl_text,
+        "extra_args": _extra_args_from_tokens(tokens),
     }
